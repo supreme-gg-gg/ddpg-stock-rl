@@ -17,6 +17,8 @@ import tflearn
 import tensorflow as tf
 import argparse
 import pprint
+import h5py
+import pandas as pd
 
 DEBUG = False
 
@@ -240,6 +242,30 @@ def test_model_multiple(env, models):
         actions = np.array(actions)
         observation, _, done, info = env.step(actions)
     env.render()
+
+def peek_stock_data():
+    # Open the H5 file
+    with h5py.File('utils/datasets/stocks_history_target_2.h5', 'r') as f:
+        # Print the keys in the file
+        print("Keys in the H5 file:", list(f.keys()))
+        
+        # Get the stock data and abbreviations
+        stock_data = f['history'][:]  # Assuming 'stock_data' is the dataset name
+        stock_abbr = f['abbreviation'][:] # Assuming 'abbreviation' is the dataset name
+        
+        # Convert byte strings to regular strings if needed
+        stock_abbr = [abbr.decode('utf-8') if isinstance(abbr, bytes) else abbr for abbr in stock_abbr]
+        
+        # Print the shape of the data
+        print("\nData shape:", stock_data.shape)
+        print("Stock abbreviations:", stock_abbr)
+        
+        # Show first few entries
+        print("\nFirst few entries of the stock data:")
+        # Assuming the data structure is [stocks, time_steps, features]
+        for i in range(min(5, len(stock_abbr))):
+            print(f"\n{stock_abbr[i]}:")
+            print(stock_data[i, :5])  # First 5 time steps
 
 
 if __name__ == '__main__':
