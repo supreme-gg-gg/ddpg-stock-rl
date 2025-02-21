@@ -4,14 +4,24 @@ Use DDPG to train a stock trader based on a window of history price
 
 from __future__ import print_function, division
 
+<<<<<<< HEAD
 from model.ddpg.actor import ActorNetwork
 from model.ddpg.critic import StockCritic
+=======
+import numpy as np
+import argparse
+import pprint
+
+from model.ddpg.actor import StockActor
+from model.ddpg.critic import CriticNetwork
+>>>>>>> 9a5e095fa138f81ce6ab5d01c584d67689a986cf
 from model.ddpg.ddpg import DDPG
 from model.ddpg.ornstein_uhlenbeck import OrnsteinUhlenbeckActionNoise
 
 from environment.portfolio import PortfolioEnv
 from utils.data import read_stock_history, normalize
 
+<<<<<<< HEAD
 import numpy as np
 import tflearn
 import tensorflow as tf
@@ -20,6 +30,10 @@ import pprint
 import h5py
 import pandas as pd
 
+=======
+import torch
+import torch.nn as nn
+>>>>>>> 9a5e095fa138f81ce6ab5d01c584d67689a986cf
 
 
 
@@ -47,62 +61,67 @@ def get_variable_scope(window_length, predictor_type, use_batch_norm):
     return '{}_window_{}_{}'.format(predictor_type, window_length, batch_norm_str)
 
 
-def stock_predictor(inputs, predictor_type, use_batch_norm):
-    window_length = inputs.get_shape()[2]
-    assert predictor_type in ['cnn', 'lstm'], 'type must be either cnn or lstm'
-    if predictor_type == 'cnn':
-        net = tflearn.conv_2d(inputs, 32, (1, 3), padding='valid')
-        if use_batch_norm:
+class StockCritic(CriticNetwork):
+    def __init__(self, sess, state_dim, action_dim, learning_rate, tau, num_actor_vars,
+                 predictor_type, use_batch_norm):
+        self.predictor_type = predictor_type
+        self.use_batch_norm = use_batch_norm
+        CriticNetwork.__init__(self, sess, state_dim, action_dim, learning_rate, tau, num_actor_vars)
+
+    def create_critic_network(self):
+        inputs = tflearn.input_data(shape=[None] + self.s_dim + [1])
+        action = tflearn.input_data(shape=[None] + self.a_dim)
+
+        net = stock_predictor(inputs, self.predictor_type, self.use_batch_norm)
+
+        # Add the action tensor in the 2nd hidden layer
+        # Use two temp layers to get the corresponding weights and biases
+        t1 = tflearn.fully_connected(net, 64)
+        t2 = tflearn.fully_connected(action, 64)
+
+        net = tf.add(t1, t2)
+        if self.use_batch_norm:
             net = tflearn.layers.normalization.batch_normalization(net)
         net = tflearn.activations.relu(net)
-        net = tflearn.conv_2d(net, 32, (1, window_length - 2), padding='valid')
-        if use_batch_norm:
-            net = tflearn.layers.normalization.batch_normalization(net)
-        net = tflearn.activations.relu(net)
-        if DEBUG:
-            print('After conv2d:', net.shape)
-        net = tflearn.flatten(net)
-        if DEBUG:
-            print('Output:', net.shape)
-    elif predictor_type == 'lstm':
-        num_stocks = inputs.get_shape()[1]
-        hidden_dim = 32
-        net = tflearn.reshape(inputs, new_shape=[-1, window_length, 1])
-        if DEBUG:
-            print('Reshaped input:', net.shape)
-        net = tflearn.lstm(net, hidden_dim)
-        if DEBUG:
-            print('After LSTM:', net.shape)
-        net = tflearn.reshape(net, new_shape=[-1, num_stocks, hidden_dim])
-        if DEBUG:
-            print('After reshape:', net.shape)
-        net = tflearn.flatten(net)
-        if DEBUG:
-            print('Output:', net.shape)
-    else:
-        raise NotImplementedError
 
-    return net
+        # linear layer connected to 1 output representing Q(s,a)
+        # Weights are init to Uniform[-3e-3, 3e-3]
+        w_init = tflearn.initializations.uniform(minval=-0.003, maxval=0.003)
+        out = tflearn.fully_connected(net, 1, weights_init=w_init)
+        return inputs, action, out
 
+    def train(self, inputs, action, predicted_q_value):
+        window_length = self.s_dim[1]
+        inputs = inputs[:, :, -window_length:, :]
+        return self.sess.run([self.out, self.optimize], feed_dict={
+            self.inputs: inputs,
+            self.action: action,
+            self.predicted_q_value: predicted_q_value
+        })
 
+    def predict(self, inputs, action):
+        window_length = self.s_dim[1]
+        inputs = inputs[:, :, -window_length:, :]
+        return self.sess.run(self.out, feed_dict={
+            self.inputs: inputs,
+            self.action: action
+        })
 
+    def predict_target(self, inputs, action):
+        window_length = self.s_dim[1]
+        inputs = inputs[:, :, -window_length:, :]
+        return self.sess.run(self.target_out, feed_dict={
+            self.target_inputs: inputs,
+            self.target_action: action
+        })
 
-
-def obs_normalizer(observation):
-    """ Preprocess observation obtained by environment
-
-    Args:
-        observation: (nb_classes, window_length, num_features) or with info
-
-    Returns: normalized
-
-    """
-    if isinstance(observation, tuple):
-        observation = observation[0]
-    # directly use close/open ratio as feature
-    observation = observation[:, :, 3:4] / observation[:, :, 0:1]
-    observation = normalize(observation)
-    return observation
+    def action_gradients(self, inputs, actions):
+        window_length = self.s_dim[1]
+        inputs = inputs[:, :, -window_length:, :]
+        return self.sess.run(self.action_grads, feed_dict={
+            self.inputs: inputs,
+            self.action: actions
+        })
 
 
 def test_model(env, model):

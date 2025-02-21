@@ -7,7 +7,7 @@ import keras
 from keras.models import Sequential
 from keras.layers import Dense, Dropout
 from keras.optimizers import Adam
-from ..base_model import BaseModel
+from ..base import BaseModel
 
 from utils.data import normalize
 

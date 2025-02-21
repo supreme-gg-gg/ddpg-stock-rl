@@ -1,157 +1,79 @@
 """
 Actor Network definition, The CNN architecture follows the one in this paper
 https://arxiv.org/abs/1706.10059
-Author: Patrick Emami, Modified by Chi Zhang
+Author: Patrick Emamim, Chi Zhang, Modified by Jet Chiang
 """
 
-import tensorflow as tf
+import torch
+import torch.optim as optim
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+import copy
 
+from base import BaseNetwork, FullyConnectedLayers
+from eiie import CNNPredictor, LSTMPredictor
 
-# ===========================
-#   Actor DNNs
-# ===========================
+def create_target_network(model: nn.Module):
+    """Create a target network from the model"""
+    target = copy.deepcopy(model)
+    for param in target.parameters():
+        param.requires_grad = False
+    return target
 
-class ActorNetwork(object):
-    """
-    Input to the network is the state, output is the action
-    under a deterministic policy.
-    The output layer activation is a tanh to keep the action
-    between -action_bound and action_bound
-    """
-
-    def __init__(self, sess, state_dim, action_dim, action_bound, learning_rate, tau, batch_size):
-        """
-
-        Args:
-            sess: a tensorflow session
-            state_dim: a list specifies shape
-            action_dim: a list specified action shape
-            action_bound: whether to normalize action in the end
-            learning_rate: learning rate
-            tau: target network update parameter
-            batch_size: use for normalization
-        """
-        self.sess = sess
-        assert isinstance(state_dim, list), 'state_dim must be a list.'
-        self.s_dim = state_dim
-        assert isinstance(action_dim, list), 'action_dim must be a list.'
-        self.a_dim = action_dim
+class StockActor(BaseNetwork):
+    """Actor network for DDPG, responsible for action selection"""
+    def __init__(self, state_dim, action_dim, action_bound, learning_rate, tau, batch_size,
+                 predictor_type, use_batch_norm):
+        super(StockActor, self).__init__()
+        self.s_dim = state_dim      # e.g., [batch_size, nb_classes, window_length, 4]
+        self.a_dim = action_dim      # e.g., [batch_size, nb_actions]
         self.action_bound = action_bound
-        self.learning_rate = learning_rate
         self.tau = tau
         self.batch_size = batch_size
-
-        # Actor Network
-        self.inputs, self.out, self.scaled_out = self.create_actor_network()
-
-        self.network_params = tf.trainable_variables()
-
-        # Target Network
-        self.target_inputs, self.target_out, self.target_scaled_out = self.create_actor_network()
-
-        self.target_network_params = tf.trainable_variables()[
-                                     len(self.network_params):]
-
-        # Op for periodically updating target network with online network
-        # weights
-        self.update_target_network_params = \
-            [self.target_network_params[i].assign(tf.multiply(self.network_params[i], self.tau) +
-                                                  tf.multiply(self.target_network_params[i], 1. - self.tau))
-             for i in range(len(self.target_network_params))]
-
-        # This gradient will be provided by the critic network
-        self.action_gradient = tf.placeholder(tf.float32, [None] + self.a_dim)
-
-        # Combine the gradients here
-        self.unnormalized_actor_gradients = tf.gradients(
-            self.scaled_out, self.network_params, -self.action_gradient)
-        self.actor_gradients = list(map(lambda x: tf.div(x, self.batch_size), self.unnormalized_actor_gradients))
-
-        # Optimization Op
-        self.optimize = tf.train.AdamOptimizer(self.learning_rate). \
-            apply_gradients(zip(self.actor_gradients, self.network_params))
-
-        self.num_trainable_vars = len(self.network_params) + len(self.target_network_params)
-
-    def create_actor_network(self):
-        raise NotImplementedError('Create actor should return (inputs, out, scaled_out)')
-
-    def train(self, inputs, a_gradient):
-        self.sess.run(self.optimize, feed_dict={
-            self.inputs: inputs,
-            self.action_gradient: a_gradient
-        })
-
-    def predict(self, inputs):
-        return self.sess.run(self.scaled_out, feed_dict={
-            self.inputs: inputs
-        })
-
-    def predict_target(self, inputs):
-        return self.sess.run(self.target_scaled_out, feed_dict={
-            self.target_inputs: inputs
-        })
-
-    def update_target_network(self):
-        self.sess.run(self.update_target_network_params)
-
-    def get_num_trainable_vars(self):
-        return self.num_trainable_vars
-
-
-class StockActor(ActorNetwork):
-    def __init__(self, sess, state_dim, action_dim, action_bound, learning_rate, tau, batch_size,
-                 predictor_type, use_batch_norm):
         self.predictor_type = predictor_type
         self.use_batch_norm = use_batch_norm
-        ActorNetwork.__init__(self, sess, state_dim, action_dim, action_bound, learning_rate, tau, batch_size)
 
-    def create_actor_network(self):
-        """
-        self.s_dim: a list specifies shape
-        """
-        nb_classes, window_length = self.s_dim
-        assert nb_classes == self.a_dim[0]
-        assert window_length > 2, 'This architecture only support window length larger than 2.'
-        inputs = tflearn.input_data(shape=[None] + self.s_dim + [1], name='input')
+        if predictor_type == 'cnn':
+            predictor = CNNPredictor(input_dim=(1, state_dim[1], state_dim[3]), output_dim=(1, 1), use_batch_norm=use_batch_norm)
+        elif predictor_type == 'lstm':
+            predictor = LSTMPredictor(input_dim=(state_dim[1], state_dim[3]), output_dim=(1, 1), hidden_dim=64, use_batch_norm=use_batch_norm)
+        else:
+            raise ValueError('Predictor type not recognized')
+        
+        fc_layers = FullyConnectedLayers(input_dim=64, output_dim=action_dim[1], use_batch_norm=use_batch_norm)
+        super().__init__(predictor, fc_layers)
 
-        net = stock_predictor(inputs, self.predictor_type, self.use_batch_norm)
+        self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
+        self.target_network = create_target_network(self)
 
-        net = tflearn.fully_connected(net, 64)
-        if self.use_batch_norm:
-            net = tflearn.layers.normalization.batch_normalization(net)
-        # net = tflearn.layers.normalization.batch_normalization(net)
-        net = tflearn.activations.relu(net)
-        net = tflearn.fully_connected(net, 64)
-        if self.use_batch_norm:
-            net = tflearn.layers.normalization.batch_normalization(net)
-        # net = tflearn.layers.normalization.batch_normalization(net)
-        net = tflearn.activations.relu(net)
-        # Final layer weights are init to Uniform[-3e-3, 3e-3]
-        w_init = tflearn.initializations.uniform(minval=-0.003, maxval=0.003)
-        out = tflearn.fully_connected(net, self.a_dim[0], activation='softmax', weights_init=w_init)
-        # Scale output to -action_bound to action_bound
-        scaled_out = tf.multiply(out, self.action_bound)
-        return inputs, out, scaled_out
+    def forward(self, state):
+        x = self.predictor(state)
+        x = self.fc_layers(x)
+        return torch.tanh(x) * self.action_bound
 
-    def train(self, inputs, a_gradient):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        self.sess.run(self.optimize, feed_dict={
-            self.inputs: inputs,
-            self.action_gradient: a_gradient
-        })
+    def train_step(self, inputs, a_gradient):
+        self.optimizer.zero_grad()
+        actions = self.forward(inputs)
+        loss = -torch.mean(actions * a_gradient)
+        loss.backward()
+        self.optimizer.step()
 
     def predict(self, inputs):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run(self.scaled_out, feed_dict={
-            self.inputs: inputs
-        })
+        self.eval()
+        with torch.no_grad():
+            actions = self.forward(inputs)
+        self.train()
+        return actions
 
     def predict_target(self, inputs):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run(self.target_scaled_out, feed_dict={
-            self.target_inputs: inputs
-        })
+        self.eval()
+        with torch.no_grad():
+            actions = self.target_network(inputs)
+            actions = torch.tanh(actions) * self.action_bound
+        self.train()
+        return actions
+
+    def update_target_network(self):
+        for target_param, param in zip(self.target_network.parameters(), self.parameters()):
+            target_param.data.copy_(self.tau * param.data + (1. - self.tau) * target_param.data)
