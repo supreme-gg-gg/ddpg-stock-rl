@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import copy
+from typing import Tuple
 
 from eiie import CNNPredictor, LSTMPredictor
 
@@ -25,8 +26,8 @@ class StockActor(nn.Module):
     def __init__(self, state_dim, action_dim, action_bound, learning_rate, tau, batch_size,
                  predictor_type, use_batch_norm):
         super(StockActor, self).__init__()
-        self.s_dim = state_dim      # e.g., [batch_size, nb_classes, window_length, 4]
-        self.a_dim = action_dim      # e.g., [batch_size, nb_actions]
+        self.s_dim = state_dim      # e.g., [nb_classes, window_length, 4] -> preprocess to only one feature
+        self.a_dim = action_dim      # e.g., [nb_actions]
         self.action_bound = action_bound
         self.tau = tau
         self.batch_size = batch_size
@@ -34,16 +35,14 @@ class StockActor(nn.Module):
         self.use_batch_norm = use_batch_norm
 
         if predictor_type == 'cnn':
-            self.predictor = CNNPredictor(input_dim=(1, state_dim[1], state_dim[3]), output_dim=(1, 1), use_batch_norm=use_batch_norm)
+            self.predictor = CNNPredictor(input_dim=state_dim, output_dim=(1, 1), use_batch_norm=use_batch_norm)
         elif predictor_type == 'lstm':
-            self.predictor = LSTMPredictor(input_dim=(state_dim[1], state_dim[3]), output_dim=(1, 1), hidden_dim=64, use_batch_norm=use_batch_norm)
+            self.predictor = LSTMPredictor(input_dim=state_dim, output_dim=(1, 1), hidden_dim=64, use_batch_norm=use_batch_norm)
         else:
             raise ValueError('Predictor type not recognized')
         
-        self.predictor_output = self.s_dim[0] * 32
-        
         layers = []
-        layers.append(nn.Linear(self.predictor_output, 64))
+        layers.append(nn.Linear(self.s_dim[0]*32, 64))
         if use_batch_norm:
             layers.append(nn.BatchNorm1d(64))
         layers.append(nn.ReLU())
@@ -73,7 +72,7 @@ class StockActor(nn.Module):
         scaled_out = x * self.action_bound
         return scaled_out
 
-    def train_step(self, inputs, critic):
+    def train_step(self, inputs, critic) -> Tuple[torch.Tensor, float]:
         """Train the actor network by maximizing the Q value
         Args:
             inputs (torch.Tensor): input tensor
@@ -81,10 +80,12 @@ class StockActor(nn.Module):
         """
         self.optimizer.zero_grad()
         actions = self.forward(inputs)
+        # predict the Q value using the critic network
         q_values = critic.predict(inputs, actions)
         loss = -torch.mean(q_values)
         loss.backward()
         self.optimizer.step()
+        return q_values, loss.item()
 
     def predict(self, inputs):
         """Predict the action given the input"""

@@ -1,6 +1,4 @@
-from base import BaseNetwork, FullyConnectedLayers
 from eiie import CNNPredictor, LSTMPredictor
-
 
 import copy
 import torch
@@ -18,7 +16,7 @@ def create_target_network(model: nn.Module):
         param.requires_grad = False
     return target
 
-class StockCritic(BaseNetwork):
+class StockCritic(nn.Module):
     """
     Critic network for an actor-critic (DDPG) model.
     This network estimates Q(s,a) given a state and an action.
@@ -65,7 +63,6 @@ class StockCritic(BaseNetwork):
         self.out = nn.Linear(64, 1)
         # Initialize the final layer weights to Uniform[-3e-3, 3e-3]
         nn.init.uniform_(self.out.weight, -0.003, 0.003)
-        nn.init.uniform_(self.out.bias, -0.003, 0.003)
 
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         self.target_network = create_target_network(self)

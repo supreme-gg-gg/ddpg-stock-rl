@@ -16,10 +16,12 @@ from .actor import StockActor
 from .critic import StockCritic
 
 class DDPGAgent(BaseAgent):
-    def __init__(self, env, actor: StockActor, critic: StockCritic, actor_noise, obs_normalizer=None, action_processor=None,
+    def __init__(self, env, actor: StockActor, critic: StockCritic, actor_noise, 
+                 obs_normalizer=None, action_processor=None,
                  config_file='config/default.json',
                  model_save_path='weights/ddpg/ddpg.pt', summary_path='results/ddpg/'):
-        with open(config_file) as f:
+        
+        with open(config_file, "r") as f:
             self.config = json.load(f)
         np.random.seed(self.config['seed'])
         if env:
@@ -65,8 +67,12 @@ class DDPGAgent(BaseAgent):
             observation, _ = self.env.reset()
             if self.obs_normalizer:
                 observation = self.obs_normalizer(observation)
+
+            # Track episode statistics
             ep_reward = 0
             ep_max_q = 0
+            ep_actor_loss = 0
+            ep_critic_loss = 0
             
             for step in range(max_steps):
                 obs_tensor = torch.tensor(np.expand_dims(observation, axis=0), dtype=torch.float32, device=self.device)
@@ -102,27 +108,35 @@ class DDPGAgent(BaseAgent):
                         y = r_batch + gamma * target_q * (1 - done_batch)
                     
                     # Update critic: MSE loss.
-                    current_q = self.critic.train_step(s_batch, a_batch, y)
+                    current_q, critic_loss = self.critic.train_step(s_batch, a_batch, y)
                     
                     # Update actor using the sampled policy gradient.
                     # pass in the critic to compute the gradients
-                    self.actor.train_step(s_batch, self.critic)
+                    _, actor_loss = self.actor.train_step(s_batch, self.critic)
                     
                     # Update target networks.
                     self.actor.update_target_network()
                     self.critic.update_target_network()
                     
                     ep_max_q += current_q.max().item()
+                    ep_actor_loss += actor_loss
+                    ep_critic_loss += critic_loss
                 
                 ep_reward += reward
                 observation = next_obs
+
+                # Log some episode statistics to TensorBoard
                 if done or step == max_steps - 1:
                     avg_q = ep_max_q / (step + 1) if step > 0 else 0
+                    avg_actor_loss = ep_actor_loss / (step + 1) if step > 0 else 0
+                    avg_critic_loss = ep_critic_loss / (step + 1) if step > 0 else 0
                     if verbose:
                         print(f"Episode: {ep}, Reward: {ep_reward:.2f}, Avg Q: {avg_q:.4f}")
                     # Log to TensorBoard
                     self.writer.add_scalar("Reward", ep_reward, ep)
                     self.writer.add_scalar("Avg_Q", avg_q, ep)
+                    self.writer.add_scalar("Actor_Loss", avg_actor_loss, ep)
+                    self.writer.add_scalar("Critic_Loss", avg_critic_loss, ep)
                     break
         
         self.save_model()
