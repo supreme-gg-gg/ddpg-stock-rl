@@ -5,6 +5,8 @@ Basically, it evaluates the value of (current action, previous action and observ
 
 import tensorflow as tf
 import tflearn
+import torch
+import torch.nn as nn
 
 
 class CriticNetwork(object):
@@ -84,3 +86,69 @@ class CriticNetwork(object):
 
     def update_target_network(self):
         self.sess.run(self.update_target_network_params)
+
+
+
+class StockCritic(CriticNetwork):
+    def __init__(self, sess, state_dim, action_dim, learning_rate, tau, num_actor_vars,
+                 predictor_type, use_batch_norm):
+        self.predictor_type = predictor_type
+        self.use_batch_norm = use_batch_norm
+        CriticNetwork.__init__(self, sess, state_dim, action_dim, learning_rate, tau, num_actor_vars)
+
+    def create_critic_network(self):
+        inputs = tflearn.input_data(shape=[None] + self.s_dim + [1])
+        action = tflearn.input_data(shape=[None] + self.a_dim)
+
+        net = stock_predictor(inputs, self.predictor_type, self.use_batch_norm)
+
+        # Add the action tensor in the 2nd hidden layer
+        # Use two temp layers to get the corresponding weights and biases
+        t1 = tflearn.fully_connected(net, 64)
+        t2 = tflearn.fully_connected(action, 64)
+
+        net = tf.add(t1, t2)
+        if self.use_batch_norm:
+            net = tflearn.layers.normalization.batch_normalization(net)
+        net = tflearn.activations.relu(net)
+
+        # linear layer connected to 1 output representing Q(s,a)
+        # Weights are init to Uniform[-3e-3, 3e-3]
+        w_init = tflearn.initializations.uniform(minval=-0.003, maxval=0.003)
+        out = tflearn.fully_connected(net, 1, weights_init=w_init)
+        return inputs, action, out
+
+    def train(self, inputs, action, predicted_q_value):
+        window_length = self.s_dim[1]
+        inputs = inputs[:, :, -window_length:, :]
+        return self.sess.run([self.out, self.optimize], feed_dict={
+            self.inputs: inputs,
+            self.action: action,
+            self.predicted_q_value: predicted_q_value
+        })
+
+    def predict(self, inputs, action):
+        window_length = self.s_dim[1]
+        inputs = inputs[:, :, -window_length:, :]
+        return self.sess.run(self.out, feed_dict={
+            self.inputs: inputs,
+            self.action: action
+        })
+
+    def predict_target(self, inputs, action):
+        window_length = self.s_dim[1]
+        inputs = inputs[:, :, -window_length:, :]
+        return self.sess.run(self.target_out, feed_dict={
+            self.target_inputs: inputs,
+            self.target_action: action
+        })
+
+    def action_gradients(self, inputs, actions):
+        window_length = self.s_dim[1]
+        inputs = inputs[:, :, -window_length:, :]
+        return self.sess.run(self.action_grads, feed_dict={
+            self.inputs: inputs,
+            self.action: actions
+        })
+
+
