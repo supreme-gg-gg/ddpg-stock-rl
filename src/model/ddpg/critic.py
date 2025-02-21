@@ -137,10 +137,10 @@ class StockCritic(nn.Module):
         Returns:
             torch.Tensor: Predicted Q-values from the target network.
         """
-        self.target_net.eval()
+        self.target_network.eval()
         with torch.no_grad():
-            q_value = self.target_net(state, action)
-        self.target_net.train()
+            q_value = self.target_network(state, action)
+        self.target_network.train()
         return q_value
 
     def action_gradients(self, state, action):
@@ -159,7 +159,7 @@ class StockCritic(nn.Module):
         state.requires_grad = False
         # Ensure action requires gradients.
         action.requires_grad = True
-        q_value = self.net(state, action)
+        q_value = self.forward(state, action)
         q_sum = q_value.sum()
         grad = torch.autograd.grad(q_sum, action, create_graph=True)[0]
         return grad
@@ -169,5 +169,5 @@ class StockCritic(nn.Module):
         Soft-update the target network parameters:
             θ_target = τ * θ_online + (1 - τ) * θ_target
         """
-        for target_param, param in zip(self.target_net.parameters(), self.net.parameters()):
+        for target_param, param in zip(self.target_network.parameters(), self.parameters()):
             target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
