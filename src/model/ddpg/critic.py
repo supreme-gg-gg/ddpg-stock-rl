@@ -1,154 +1,176 @@
-"""
-Critic Network definition, the input is (o, a_{t-1}, a_t) since (o, a_{t-1}) is the state.
-Basically, it evaluates the value of (current action, previous action and observation) pair
-"""
+from base import BaseNetwork, FullyConnectedLayers
+from eiie import CNNPredictor, LSTMPredictor
 
-import tensorflow as tf
-import tflearn
+
+import copy
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
 
+# It is assumed that these predictors are defined elsewhere:
+# from eiie import CNNPredictor, LSTMPredictor
 
-class CriticNetwork(object):
+def create_target_network(model: nn.Module):
+    """Create a target network from the model"""
+    target = copy.deepcopy(model)
+    for param in target.parameters():
+        param.requires_grad = False
+    return target
+
+class StockCritic(BaseNetwork):
     """
-    Input to the network is the state and action, output is Q(s,a).
-    The action must be obtained from the output of the Actor network.
+    Critic network for an actor-critic (DDPG) model.
+    This network estimates Q(s,a) given a state and an action.
+    It internally builds the network architecture (using a predictor and two branches)
+    and also maintains a target network for stable training.
     """
-
-    def __init__(self, sess, state_dim, action_dim, learning_rate, tau, num_actor_vars):
-        self.sess = sess
-        assert isinstance(state_dim, list), 'state_dim must be a list.'
-        self.s_dim = state_dim
-        assert isinstance(action_dim, list), 'action_dim must be a list.'
+    def __init__(self, state_dim, action_dim, learning_rate, tau, num_actor_vars,
+                 predictor_type, use_batch_norm):
+        """
+        Args:
+            state_dim (list): Dimensions of the state (e.g., [batch_size, window_length, features] or similar).
+            action_dim (list): Dimensions of the action (e.g., [batch_size, nb_actions]).
+            learning_rate (float): Learning rate for the critic optimizer.
+            tau (float): Soft update parameter for the target network.
+            predictor_type (str): Either 'cnn' or 'lstm' to choose the state predictor.
+            use_batch_norm (bool): Whether to use batch normalization.
+        """
+        super(StockCritic, self).__init__()
+        self.tau = tau
+        self.s_dim = state_dim  # stored for potential input slicing if needed
         self.a_dim = action_dim
         self.learning_rate = learning_rate
         self.tau = tau
-
-        # Create the critic network
-        self.inputs, self.action, self.out = self.create_critic_network()
-
-        self.network_params = tf.trainable_variables()[num_actor_vars:]
-
-        # Target Network
-        self.target_inputs, self.target_action, self.target_out = self.create_critic_network()
-
-        self.target_network_params = tf.trainable_variables()[(len(self.network_params) + num_actor_vars):]
-
-        # Op for periodically updating target network with online network
-        # weights with regularization
-        self.update_target_network_params = \
-            [self.target_network_params[i].assign(tf.multiply(self.network_params[i], self.tau) \
-                                                  + tf.multiply(self.target_network_params[i], 1. - self.tau))
-             for i in range(len(self.target_network_params))]
-
-        # Network target (y_i)
-        self.predicted_q_value = tf.placeholder(tf.float32, [None, 1])
-
-        # Define loss and optimization Op
-        self.loss = tflearn.mean_square(self.predicted_q_value, self.out)
-        self.optimize = tf.train.AdamOptimizer(
-            self.learning_rate).minimize(self.loss)
-
-        # Get the gradient of the net w.r.t. the action.
-        # For each action in the minibatch (i.e., for each x in xs),
-        # this will sum up the gradients of each critic output in the minibatch
-        # w.r.t. that action. Each output is independent of all
-        # actions except for one.
-        self.action_grads = tf.gradients(self.out, self.action)
-
-    def create_critic_network(self):
-        raise NotImplementedError('Create critic should return (inputs, action, out)')
-
-    def train(self, inputs, action, predicted_q_value):
-        return self.sess.run([self.out, self.optimize], feed_dict={
-            self.inputs: inputs,
-            self.action: action,
-            self.predicted_q_value: predicted_q_value
-        })
-
-    def predict(self, inputs, action):
-        return self.sess.run(self.out, feed_dict={
-            self.inputs: inputs,
-            self.action: action
-        })
-
-    def predict_target(self, inputs, action):
-        return self.sess.run(self.target_out, feed_dict={
-            self.target_inputs: inputs,
-            self.target_action: action
-        })
-
-    def action_gradients(self, inputs, actions):
-        return self.sess.run(self.action_grads, feed_dict={
-            self.inputs: inputs,
-            self.action: actions
-        })
-
-    def update_target_network(self):
-        self.sess.run(self.update_target_network_params)
-
-
-
-class StockCritic(CriticNetwork):
-    def __init__(self, sess, state_dim, action_dim, learning_rate, tau, num_actor_vars,
-                 predictor_type, use_batch_norm):
         self.predictor_type = predictor_type
         self.use_batch_norm = use_batch_norm
-        CriticNetwork.__init__(self, sess, state_dim, action_dim, learning_rate, tau, num_actor_vars)
 
-    def create_critic_network(self):
-        inputs = tflearn.input_data(shape=[None] + self.s_dim + [1])
-        action = tflearn.input_data(shape=[None] + self.a_dim)
+        self.q_value = None
 
-        net = stock_predictor(inputs, self.predictor_type, self.use_batch_norm)
+        if predictor_type == 'cnn':
+            self.predictor = CNNPredictor(input_dim=(1, state_dim[1], state_dim[3]), output_dim=(1, 1), use_batch_norm=use_batch_norm)
+        elif predictor_type == 'lstm':
+            self.predictor = LSTMPredictor(input_dim=(state_dim[1], state_dim[3]), output_dim=(1, 1), hidden_dim=64, use_batch_norm=use_batch_norm)
+        else:
+            raise ValueError('Predictor type not recognized')
 
-        # Add the action tensor in the 2nd hidden layer
-        # Use two temp layers to get the corresponding weights and biases
-        t1 = tflearn.fully_connected(net, 64)
-        t2 = tflearn.fully_connected(action, 64)
+        self.fc1_state = nn.Linear(64, 64)
+        self.fc2_action = nn.Linear(self.a_dim[1], 64)
 
-        net = tf.add(t1, t2)
+        # Optional batch normalization after combining the two branches.
         if self.use_batch_norm:
-            net = tflearn.layers.normalization.batch_normalization(net)
-        net = tflearn.activations.relu(net)
+            self.bn = nn.BatchNorm1d(64)
 
-        # linear layer connected to 1 output representing Q(s,a)
-        # Weights are init to Uniform[-3e-3, 3e-3]
-        w_init = tflearn.initializations.uniform(minval=-0.003, maxval=0.003)
-        out = tflearn.fully_connected(net, 1, weights_init=w_init)
-        return inputs, action, out
+        # Final layer to produce a single Q-value.
+        self.out = nn.Linear(64, 1)
+        # Initialize the final layer weights to Uniform[-3e-3, 3e-3]
+        nn.init.uniform_(self.out.weight, -0.003, 0.003)
+        nn.init.uniform_(self.out.bias, -0.003, 0.003)
 
-    def train(self, inputs, action, predicted_q_value):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run([self.out, self.optimize], feed_dict={
-            self.inputs: inputs,
-            self.action: action,
-            self.predicted_q_value: predicted_q_value
-        })
-
-    def predict(self, inputs, action):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run(self.out, feed_dict={
-            self.inputs: inputs,
-            self.action: action
-        })
-
-    def predict_target(self, inputs, action):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run(self.target_out, feed_dict={
-            self.target_inputs: inputs,
-            self.target_action: action
-        })
-
-    def action_gradients(self, inputs, actions):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run(self.action_grads, feed_dict={
-            self.inputs: inputs,
-            self.action: actions
-        })
+        self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
+        self.target_network = create_target_network(self)
 
 
+    def forward(self, state, action):
+        """
+        Forward pass through the online Q-network.
+        
+        Args:
+            state (torch.Tensor): The state input.
+            action (torch.Tensor): The action input.
+        
+        Returns:
+            torch.Tensor: Predicted Q-value.
+        """
+
+        state_features = self.predictor(state)  # Expected shape: (batch, 64)
+        x_state = self.fc1_state(state_features)
+        x_action = self.fc2_action(action)
+        x = x_state + x_action
+        if self.use_batch_norm:
+            x = self.bn(x)
+        x = F.relu(x)
+        self.q_value = self.out(x)
+        return self.q_value
+
+    def train_step(self, state, action, target_q_value):
+        """
+        Perform a training step on the online network.
+        
+        Args:
+            state (torch.Tensor): The state input.
+            action (torch.Tensor): The action taken.
+            target_q_value (torch.Tensor): The target Q-value.
+        
+        Returns:
+            tuple: (predicted Q-values, loss value)
+        """
+        self.optimizer.zero_grad()
+        q_value = self.forward(state, action)
+        loss = F.mse_loss(q_value, target_q_value)
+        loss.backward()
+        self.optimizer.step()
+        return q_value, loss.item()
+
+    def predict(self, state, action):
+        """
+        Predict Q-values using the online network.
+        
+        Args:
+            state (torch.Tensor): The state input.
+            action (torch.Tensor): The action input.
+        
+        Returns:
+            torch.Tensor: Predicted Q-values.
+        """
+        self.eval()
+        with torch.no_grad():
+            q_value = self.forward(state, action)
+        self.train()
+        return q_value
+
+    def predict_target(self, state, action):
+        """
+        Predict Q-values using the target network.
+        
+        Args:
+            state (torch.Tensor): The state input.
+            action (torch.Tensor): The action input.
+        
+        Returns:
+            torch.Tensor: Predicted Q-values from the target network.
+        """
+        self.target_net.eval()
+        with torch.no_grad():
+            q_value = self.target_net(state, action)
+        self.target_net.train()
+        return q_value
+
+    def action_gradients(self, state, action):
+        """
+        Compute the gradients of the Q-value with respect to the actions.
+        These gradients can be used to update the actor network.
+        
+        Args:
+            state (torch.Tensor): The state input.
+            action (torch.Tensor): The action input (should require gradients).
+        
+        Returns:
+            torch.Tensor: Gradients of Q w.r.t. the action.
+        """
+        # Ensure state does not require gradients.
+        state.requires_grad = False
+        # Ensure action requires gradients.
+        action.requires_grad = True
+        q_value = self.net(state, action)
+        q_sum = q_value.sum()
+        grad = torch.autograd.grad(q_sum, action, create_graph=True)[0]
+        return grad
+
+    def update_target_network(self):
+        """
+        Soft-update the target network parameters:
+            θ_target = τ * θ_online + (1 - τ) * θ_target
+        """
+        for target_param, param in zip(self.target_net.parameters(), self.net.parameters()):
+            target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
