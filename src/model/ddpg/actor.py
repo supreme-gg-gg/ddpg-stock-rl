@@ -1,7 +1,7 @@
 """
 Actor Network definition, The CNN architecture follows the one in this paper
 https://arxiv.org/abs/1706.10059
-Author: Patrick Emami, Modified by Chi Zhang
+Author: Patrick Emamim, Chi Zhang, Modified by Jet Chiang
 """
 
 import torch
@@ -11,71 +11,18 @@ import torch.nn.functional as F
 import numpy as np
 import copy
 
-# Assume stock_predictor is already implemented and imported
-from util import create_predictor_model
+from base import BaseNetwork, FullyConnectedLayers
+from eiie import CNNPredictor, LSTMPredictor
 
-# --- Old TensorFlow implementation (preserved) ---
-"""
-"""
-# """
-# Actor Network definition, The CNN architecture follows the one in this paper
-# https://arxiv.org/abs/1706.10059
-# Author: Patrick Emami, Modified by Chi Zhang
-#
-# import tensorflow as tf
-# import tflearn
-#
-# class ActorNetwork(object):
-#     def __init__(self, sess, state_dim, action_dim, action_bound, learning_rate, tau, batch_size):
-#         # ...existing code...
-#         self.inputs, self.out, self.scaled_out = self.create_actor_network()
-#         self.network_params = tf.trainable_variables()
-#         # ...existing code...
-#         self.action_gradient = tf.placeholder(tf.float32, [None] + self.a_dim)
-#         # ...existing code...
-#         self.optimize = tf.train.AdamOptimizer(self.learning_rate).apply_gradients(zip(self.actor_gradients, self.network_params))
-#         # ...existing code...
-#
-#     def create_actor_network(self):
-#         raise NotImplementedError('Create actor should return (inputs, out, scaled_out)')
-#
-#     def train(self, inputs, a_gradient):
-#         # ...existing code...
-#         self.sess.run(self.optimize, feed_dict={ self.inputs: inputs, self.action_gradient: a_gradient })
-#
-#     def predict(self, inputs):
-#         return self.sess.run(self.scaled_out, feed_dict={ self.inputs: inputs })
-#
-#     def update_target_network(self):
-#         # ...existing code...
-#         for target_param, param in zip(self.target_network_params, self.network_params):
-#             target_param.data.copy_(target_param.data * self.tau + param.data * (1. - self.tau))
-# 
-# class StockActor(ActorNetwork):
-#     def __init__(self, sess, state_dim, action_dim, action_bound, learning_rate, tau, batch_size,
-#                  predictor_type, use_batch_norm):
-#         # ...existing code...
-#
-#     def create_actor_network(self):
-#         # ...existing code...
-#         inputs = tflearn.input_data(shape=[None] + self.s_dim + [1], name='input')
-#         net = stock_predictor(inputs, self.predictor_type, self.use_batch_norm)
-#         # ...existing code...
-#         return inputs, out, scaled_out
-#
-#     def train(self, inputs, a_gradient):
-#         # ...existing code...
-#         self.sess.run(self.optimize, feed_dict={ self.inputs: inputs, self.action_gradient: a_gradient })
-#
-#     def predict(self, inputs):
-#         # ...existing code...
-#         return self.sess.run(self.scaled_out, feed_dict={ self.inputs: inputs })
-# """
-# --- End of old implementation ---
+def create_target_network(model: nn.Module):
+    """Create a target network from the model"""
+    target = copy.deepcopy(model)
+    for param in target.parameters():
+        param.requires_grad = False
+    return target
 
-
-# New coherent PyTorch implementation combined into StockActor
-class StockActor(nn.Module):
+class StockActor(BaseNetwork):
+    """Actor network for DDPG, responsible for action selection"""
     def __init__(self, state_dim, action_dim, action_bound, learning_rate, tau, batch_size,
                  predictor_type, use_batch_norm):
         super(StockActor, self).__init__()
@@ -87,43 +34,25 @@ class StockActor(nn.Module):
         self.predictor_type = predictor_type
         self.use_batch_norm = use_batch_norm
 
-        # Build network using stock_predictor and additional FC layers
-        predictor = create_predictor_model(self.s_dim, self.predictor_type, self.use_batch_norm)
-        
-        # Calculate predictor output dimension
         if predictor_type == 'cnn':
-            # For CNN: num_filters * num_stocks
-            self.predictor_out_dim = 32 * state_dim[0]  # 32 is the number of filters
+            predictor = CNNPredictor(input_dim=(1, state_dim[1], state_dim[3]), output_dim=(1, 1), use_batch_norm=use_batch_norm)
+        elif predictor_type == 'lstm':
+            predictor = LSTMPredictor(input_dim=(state_dim[1], state_dim[3]), output_dim=(1, 1), hidden_dim=64, use_batch_norm=use_batch_norm)
         else:
-            # For LSTM: hidden_dim * num_stocks
-            self.predictor_out_dim = 32 * state_dim[0]  # 32 is the hidden_dim
+            raise ValueError('Predictor type not recognized')
         
-        fc_layers = nn.Sequential(
-            nn.Linear(self.predictor_out_dim, 64),
-            nn.BatchNorm1d(64) if self.use_batch_norm else nn.Identity(),
-            nn.ReLU(),
-            nn.Linear(64, 64),
-            nn.BatchNorm1d(64) if self.use_batch_norm else nn.Identity(),
-            nn.ReLU(),
-            nn.Linear(64, self.a_dim[0]),
-            nn.Softmax(dim=-1)
-        )
-        
-        self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
-        self.target_network = copy.deepcopy(self)
+        fc_layers = FullyConnectedLayers(input_dim=64, output_dim=action_dim[1], use_batch_norm=use_batch_norm)
+        super().__init__(predictor, fc_layers)
 
-    def forward(self, x):
-        # Process input as in original (e.g., flatten if needed)
-        # x = x[:, :, -self.s_dim[1]:, :]  # uncomment if slicing is required
-        x = x.view(x.size(0), -1)
-        out = self.network(x)
-        return out * self.action_bound
+        self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
+        self.target_network = create_target_network(self)
+
+    def forward(self, state):
+        return torch.tanh(super().forward(state)) * self.action_bound
 
     def train_step(self, inputs, a_gradient):
         self.optimizer.zero_grad()
-        inputs = inputs.view(inputs.size(0), -1)
         actions = self.forward(inputs)
-        # Loss is defined to maximize the expected value (i.e. minimize negative)
         loss = -torch.mean(actions * a_gradient)
         loss.backward()
         self.optimizer.step()
@@ -131,7 +60,6 @@ class StockActor(nn.Module):
     def predict(self, inputs):
         self.eval()
         with torch.no_grad():
-            inputs = inputs.view(inputs.size(0), -1)
             actions = self.forward(inputs)
         self.train()
         return actions
@@ -139,9 +67,8 @@ class StockActor(nn.Module):
     def predict_target(self, inputs):
         self.eval()
         with torch.no_grad():
-            inputs = inputs.view(inputs.size(0), -1)
-            out = self.target_network(inputs)
-            actions = out * self.action_bound
+            actions = self.target_network(inputs)
+            actions = torch.tanh(actions) * self.action_bound
         self.train()
         return actions
 

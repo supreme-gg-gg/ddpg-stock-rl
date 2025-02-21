@@ -7,7 +7,7 @@ from keras.layers import Conv2D
 from keras.models import load_model
 from keras.optimizers import Adam
 
-from ..base_model import BaseModel
+from ..base import BaseModel
 from utils.data import normalize
 
 import numpy as np
