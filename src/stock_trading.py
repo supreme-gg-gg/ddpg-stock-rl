@@ -4,36 +4,20 @@ Use DDPG to train a stock trader based on a window of history price
 
 from __future__ import print_function, division
 
-<<<<<<< HEAD
-from model.ddpg.actor import ActorNetwork
-from model.ddpg.critic import StockCritic
-=======
 import numpy as np
 import argparse
 import pprint
 
 from model.ddpg.actor import StockActor
 from model.ddpg.critic import CriticNetwork
->>>>>>> 9a5e095fa138f81ce6ab5d01c584d67689a986cf
 from model.ddpg.ddpg import DDPG
 from model.ddpg.ornstein_uhlenbeck import OrnsteinUhlenbeckActionNoise
 
 from environment.portfolio import PortfolioEnv
 from utils.data import read_stock_history, normalize
 
-<<<<<<< HEAD
-import numpy as np
-import tflearn
-import tensorflow as tf
-import argparse
-import pprint
-import h5py
-import pandas as pd
-
-=======
 import torch
 import torch.nn as nn
->>>>>>> 9a5e095fa138f81ce6ab5d01c584d67689a986cf
 
 
 

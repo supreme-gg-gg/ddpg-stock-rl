@@ -41,8 +41,8 @@ class StockActor(BaseNetwork):
         else:
             raise ValueError('Predictor type not recognized')
         
-        fc_layers = FullyConnectedLayers(input_dim=64, output_dim=action_dim[1], use_batch_norm=use_batch_norm)
-        super().__init__(predictor, fc_layers)
+        self.fc_layers = FullyConnectedLayers(input_dim=64, output_dim=action_dim[1], use_batch_norm=use_batch_norm)
+        super().__init__(predictor, self.fc_layers)
 
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         self.target_network = create_target_network(self)
