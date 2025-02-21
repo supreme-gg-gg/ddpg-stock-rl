@@ -38,7 +38,7 @@ class StockCritic(BaseNetwork):
         """
         super(StockCritic, self).__init__()
         self.tau = tau
-        self.s_dim = state_dim  # stored for potential input slicing if needed
+        self.s_dim = state_dim #(num_stocks, window_length)
         self.a_dim = action_dim
         self.learning_rate = learning_rate
         self.tau = tau
@@ -54,7 +54,7 @@ class StockCritic(BaseNetwork):
         else:
             raise ValueError('Predictor type not recognized')
 
-        self.fc1_state = nn.Linear(64, 64)
+        self.fc1_state = nn.Linear(self.s_dim[0] * 32, 64) # num_stocks * 32
         self.fc2_action = nn.Linear(self.a_dim[1], 64)
 
         # Optional batch normalization after combining the two branches.

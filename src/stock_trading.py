@@ -9,7 +9,7 @@ import argparse
 import pprint
 
 from model.ddpg.actor import StockActor
-from model.ddpg.critic import CriticNetwork
+from model.ddpg.critic import StockCritic
 from model.ddpg.ddpg import DDPG
 from model.ddpg.ornstein_uhlenbeck import OrnsteinUhlenbeckActionNoise
 
@@ -43,70 +43,6 @@ def get_variable_scope(window_length, predictor_type, use_batch_norm):
     else:
         batch_norm_str = 'no_batch_norm'
     return '{}_window_{}_{}'.format(predictor_type, window_length, batch_norm_str)
-
-
-class StockCritic(CriticNetwork):
-    def __init__(self, sess, state_dim, action_dim, learning_rate, tau, num_actor_vars,
-                 predictor_type, use_batch_norm):
-        self.predictor_type = predictor_type
-        self.use_batch_norm = use_batch_norm
-        CriticNetwork.__init__(self, sess, state_dim, action_dim, learning_rate, tau, num_actor_vars)
-
-    def create_critic_network(self):
-        inputs = tflearn.input_data(shape=[None] + self.s_dim + [1])
-        action = tflearn.input_data(shape=[None] + self.a_dim)
-
-        net = stock_predictor(inputs, self.predictor_type, self.use_batch_norm)
-
-        # Add the action tensor in the 2nd hidden layer
-        # Use two temp layers to get the corresponding weights and biases
-        t1 = tflearn.fully_connected(net, 64)
-        t2 = tflearn.fully_connected(action, 64)
-
-        net = tf.add(t1, t2)
-        if self.use_batch_norm:
-            net = tflearn.layers.normalization.batch_normalization(net)
-        net = tflearn.activations.relu(net)
-
-        # linear layer connected to 1 output representing Q(s,a)
-        # Weights are init to Uniform[-3e-3, 3e-3]
-        w_init = tflearn.initializations.uniform(minval=-0.003, maxval=0.003)
-        out = tflearn.fully_connected(net, 1, weights_init=w_init)
-        return inputs, action, out
-
-    def train(self, inputs, action, predicted_q_value):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run([self.out, self.optimize], feed_dict={
-            self.inputs: inputs,
-            self.action: action,
-            self.predicted_q_value: predicted_q_value
-        })
-
-    def predict(self, inputs, action):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run(self.out, feed_dict={
-            self.inputs: inputs,
-            self.action: action
-        })
-
-    def predict_target(self, inputs, action):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run(self.target_out, feed_dict={
-            self.target_inputs: inputs,
-            self.target_action: action
-        })
-
-    def action_gradients(self, inputs, actions):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run(self.action_grads, feed_dict={
-            self.inputs: inputs,
-            self.action: actions
-        })
-
 
 def test_model(env, model):
     observation, info = env.reset()
@@ -205,15 +141,14 @@ if __name__ == '__main__':
 
     variable_scope = get_variable_scope(window_length, predictor_type, use_batch_norm)
 
-    with tf.variable_scope(variable_scope):
-        sess = tf.Session()
-        actor = StockActor(sess, state_dim, action_dim, action_bound, 1e-4, tau, batch_size,
-                           predictor_type, use_batch_norm)
-        critic = StockCritic(sess=sess, state_dim=state_dim, action_dim=action_dim, tau=1e-3,
-                             learning_rate=1e-3, num_actor_vars=actor.get_num_trainable_vars(),
+    actor = StockActor(state_dim, action_dim, action_bound, 1e-4, tau, batch_size,
+                        predictor_type, use_batch_norm)
+    critic = StockCritic(state_dim=state_dim, action_dim=action_dim, learning_rate=1e-3, tau=1e-3,
+                             num_actor_vars=actor.get_num_trainable_vars(),
                              predictor_type=predictor_type, use_batch_norm=use_batch_norm)
-        ddpg_model = DDPG(env, sess, actor, critic, actor_noise, obs_normalizer=obs_normalizer,
-                          config_file='config/stock.json', model_save_path=model_save_path,
-                          summary_path=summary_path)
-        ddpg_model.initialize(load_weights=False)
-        ddpg_model.train()
+    ddpg_model = DDPG(env, sess, actor, critic, actor_noise,
+                        config_file='config/stock.json', model_save_path=model_save_path,
+                        summary_path=summary_path)
+    ddpg_model.initialize(load_weights=False)
+    ddpg_model.train()
+
