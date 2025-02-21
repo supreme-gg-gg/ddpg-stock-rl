@@ -1,13 +1,14 @@
 """
 Contain an abstract base model that all the subclass need to follow the API
 """
-
+from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class BaseAgent(object):
+class BaseAgent(ABC, object):
     """Abstract base class for different agents (DDPG, PPO, etc.)"""
+    @abstractmethod
     def predict_single(self, observation):
         """ Predict the action of a single observation
 
@@ -20,13 +21,14 @@ class BaseAgent(object):
         """
         raise NotImplementedError('This method must be implemented by subclass')
 
-class PredictorBase(nn.Module):
+class PredictorBase(nn.Module, ABC):
     """Abstract base class for different predictors (CNN, LSTM, etc.)"""
     def __init__(self, input_dim, output_dim):
         super().__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
 
+    @abstractmethod
     def forward(self, x):
         raise NotImplementedError("Forward method must be implemented in subclass")
     
@@ -47,14 +49,13 @@ class FullyConnectedLayers(nn.Module):
         x = self.softmax(self.fc3(x))
         return x
 
-class BaseNetwork(nn.Module):
+class BaseNetwork(nn.Module, ABC):
     """Abstract base class for Actor and Critic"""
     def __init__(self, predictor: PredictorBase, fc_layers: FullyConnectedLayers):
         super().__init__()
         self.predictor = predictor
         self.fc_layers = fc_layers
 
+    @abstractmethod
     def forward(self, x):
-        x = self.predictor(x)
-        x = self.fc_layers(x)
-        return x
+        raise NotImplementedError("Forward method must be implemented in subclass")

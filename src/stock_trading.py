@@ -45,21 +45,6 @@ def get_variable_scope(window_length, predictor_type, use_batch_norm):
         batch_norm_str = 'no_batch_norm'
     return '{}_window_{}_{}'.format(predictor_type, window_length, batch_norm_str)
 
-def obs_normalizer(observation):
-    """ Preprocess observation obtained by environment
-
-    Args:
-        observation: (nb_classes, window_length, num_features) or with info
-
-    Returns: normalized
-
-    """
-    if isinstance(observation, tuple):
-        observation = observation[0]
-    # directly use close/open ratio as feature
-    observation = observation[:, :, 3:4] / observation[:, :, 0:1]
-    observation = normalize(observation)
-    return observation
 
 class StockCritic(CriticNetwork):
     def __init__(self, sess, state_dim, action_dim, learning_rate, tau, num_actor_vars,
@@ -122,7 +107,8 @@ class StockCritic(CriticNetwork):
             self.inputs: inputs,
             self.action: actions
         })
-    
+
+
 def test_model(env, model):
     observation, info = env.reset()
     done = False

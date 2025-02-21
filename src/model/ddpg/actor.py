@@ -48,7 +48,9 @@ class StockActor(BaseNetwork):
         self.target_network = create_target_network(self)
 
     def forward(self, state):
-        return torch.tanh(super().forward(state)) * self.action_bound
+        x = self.predictor(state)
+        x = self.fc_layers(x)
+        return torch.tanh(x) * self.action_bound
 
     def train_step(self, inputs, a_gradient):
         self.optimizer.zero_grad()
