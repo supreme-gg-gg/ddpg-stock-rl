@@ -5,7 +5,7 @@ Use DDPG to train a stock trader based on a window of history price
 from __future__ import print_function, division
 
 from model.ddpg.actor import ActorNetwork
-from model.ddpg.critic import CriticNetwork
+from model.ddpg.critic import StockCritic
 from model.ddpg.ddpg import DDPG
 from model.ddpg.ornstein_uhlenbeck import OrnsteinUhlenbeckActionNoise
 
@@ -20,7 +20,7 @@ import pprint
 import h5py
 import pandas as pd
 
-DEBUG = False
+
 
 
 def get_model_path(window_length, predictor_type, use_batch_norm):
@@ -85,125 +85,7 @@ def stock_predictor(inputs, predictor_type, use_batch_norm):
     return net
 
 
-class StockActor(ActorNetwork):
-    def __init__(self, sess, state_dim, action_dim, action_bound, learning_rate, tau, batch_size,
-                 predictor_type, use_batch_norm):
-        self.predictor_type = predictor_type
-        self.use_batch_norm = use_batch_norm
-        ActorNetwork.__init__(self, sess, state_dim, action_dim, action_bound, learning_rate, tau, batch_size)
 
-    def create_actor_network(self):
-        """
-        self.s_dim: a list specifies shape
-        """
-        nb_classes, window_length = self.s_dim
-        assert nb_classes == self.a_dim[0]
-        assert window_length > 2, 'This architecture only support window length larger than 2.'
-        inputs = tflearn.input_data(shape=[None] + self.s_dim + [1], name='input')
-
-        net = stock_predictor(inputs, self.predictor_type, self.use_batch_norm)
-
-        net = tflearn.fully_connected(net, 64)
-        if self.use_batch_norm:
-            net = tflearn.layers.normalization.batch_normalization(net)
-        # net = tflearn.layers.normalization.batch_normalization(net)
-        net = tflearn.activations.relu(net)
-        net = tflearn.fully_connected(net, 64)
-        if self.use_batch_norm:
-            net = tflearn.layers.normalization.batch_normalization(net)
-        # net = tflearn.layers.normalization.batch_normalization(net)
-        net = tflearn.activations.relu(net)
-        # Final layer weights are init to Uniform[-3e-3, 3e-3]
-        w_init = tflearn.initializations.uniform(minval=-0.003, maxval=0.003)
-        out = tflearn.fully_connected(net, self.a_dim[0], activation='softmax', weights_init=w_init)
-        # Scale output to -action_bound to action_bound
-        scaled_out = tf.multiply(out, self.action_bound)
-        return inputs, out, scaled_out
-
-    def train(self, inputs, a_gradient):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        self.sess.run(self.optimize, feed_dict={
-            self.inputs: inputs,
-            self.action_gradient: a_gradient
-        })
-
-    def predict(self, inputs):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run(self.scaled_out, feed_dict={
-            self.inputs: inputs
-        })
-
-    def predict_target(self, inputs):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run(self.target_scaled_out, feed_dict={
-            self.target_inputs: inputs
-        })
-
-
-class StockCritic(CriticNetwork):
-    def __init__(self, sess, state_dim, action_dim, learning_rate, tau, num_actor_vars,
-                 predictor_type, use_batch_norm):
-        self.predictor_type = predictor_type
-        self.use_batch_norm = use_batch_norm
-        CriticNetwork.__init__(self, sess, state_dim, action_dim, learning_rate, tau, num_actor_vars)
-
-    def create_critic_network(self):
-        inputs = tflearn.input_data(shape=[None] + self.s_dim + [1])
-        action = tflearn.input_data(shape=[None] + self.a_dim)
-
-        net = stock_predictor(inputs, self.predictor_type, self.use_batch_norm)
-
-        # Add the action tensor in the 2nd hidden layer
-        # Use two temp layers to get the corresponding weights and biases
-        t1 = tflearn.fully_connected(net, 64)
-        t2 = tflearn.fully_connected(action, 64)
-
-        net = tf.add(t1, t2)
-        if self.use_batch_norm:
-            net = tflearn.layers.normalization.batch_normalization(net)
-        net = tflearn.activations.relu(net)
-
-        # linear layer connected to 1 output representing Q(s,a)
-        # Weights are init to Uniform[-3e-3, 3e-3]
-        w_init = tflearn.initializations.uniform(minval=-0.003, maxval=0.003)
-        out = tflearn.fully_connected(net, 1, weights_init=w_init)
-        return inputs, action, out
-
-    def train(self, inputs, action, predicted_q_value):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run([self.out, self.optimize], feed_dict={
-            self.inputs: inputs,
-            self.action: action,
-            self.predicted_q_value: predicted_q_value
-        })
-
-    def predict(self, inputs, action):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run(self.out, feed_dict={
-            self.inputs: inputs,
-            self.action: action
-        })
-
-    def predict_target(self, inputs, action):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run(self.target_out, feed_dict={
-            self.target_inputs: inputs,
-            self.target_action: action
-        })
-
-    def action_gradients(self, inputs, actions):
-        window_length = self.s_dim[1]
-        inputs = inputs[:, :, -window_length:, :]
-        return self.sess.run(self.action_grads, feed_dict={
-            self.inputs: inputs,
-            self.action: actions
-        })
 
 
 def obs_normalizer(observation):
@@ -267,7 +149,6 @@ def peek_stock_data():
             print(f"\n{stock_abbr[i]}:")
             print(stock_data[i, :5])  # First 5 time steps
 
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Provide arguments for training different DDPG models')
@@ -298,6 +179,7 @@ if __name__ == '__main__':
     for i, stock in enumerate(target_stocks):
         target_history[i] = history[abbreviation.index(stock), :num_training_time, :]
 
+    print(target_history.shape)
     # setup environment
     env = PortfolioEnv(target_history, target_stocks, steps=1000, window_length=window_length)
 

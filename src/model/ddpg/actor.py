@@ -97,3 +97,61 @@ class ActorNetwork(object):
 
     def get_num_trainable_vars(self):
         return self.num_trainable_vars
+
+
+class StockActor(ActorNetwork):
+    def __init__(self, sess, state_dim, action_dim, action_bound, learning_rate, tau, batch_size,
+                 predictor_type, use_batch_norm):
+        self.predictor_type = predictor_type
+        self.use_batch_norm = use_batch_norm
+        ActorNetwork.__init__(self, sess, state_dim, action_dim, action_bound, learning_rate, tau, batch_size)
+
+    def create_actor_network(self):
+        """
+        self.s_dim: a list specifies shape
+        """
+        nb_classes, window_length = self.s_dim
+        assert nb_classes == self.a_dim[0]
+        assert window_length > 2, 'This architecture only support window length larger than 2.'
+        inputs = tflearn.input_data(shape=[None] + self.s_dim + [1], name='input')
+
+        net = stock_predictor(inputs, self.predictor_type, self.use_batch_norm)
+
+        net = tflearn.fully_connected(net, 64)
+        if self.use_batch_norm:
+            net = tflearn.layers.normalization.batch_normalization(net)
+        # net = tflearn.layers.normalization.batch_normalization(net)
+        net = tflearn.activations.relu(net)
+        net = tflearn.fully_connected(net, 64)
+        if self.use_batch_norm:
+            net = tflearn.layers.normalization.batch_normalization(net)
+        # net = tflearn.layers.normalization.batch_normalization(net)
+        net = tflearn.activations.relu(net)
+        # Final layer weights are init to Uniform[-3e-3, 3e-3]
+        w_init = tflearn.initializations.uniform(minval=-0.003, maxval=0.003)
+        out = tflearn.fully_connected(net, self.a_dim[0], activation='softmax', weights_init=w_init)
+        # Scale output to -action_bound to action_bound
+        scaled_out = tf.multiply(out, self.action_bound)
+        return inputs, out, scaled_out
+
+    def train(self, inputs, a_gradient):
+        window_length = self.s_dim[1]
+        inputs = inputs[:, :, -window_length:, :]
+        self.sess.run(self.optimize, feed_dict={
+            self.inputs: inputs,
+            self.action_gradient: a_gradient
+        })
+
+    def predict(self, inputs):
+        window_length = self.s_dim[1]
+        inputs = inputs[:, :, -window_length:, :]
+        return self.sess.run(self.scaled_out, feed_dict={
+            self.inputs: inputs
+        })
+
+    def predict_target(self, inputs):
+        window_length = self.s_dim[1]
+        inputs = inputs[:, :, -window_length:, :]
+        return self.sess.run(self.target_scaled_out, feed_dict={
+            self.target_inputs: inputs
+        })
