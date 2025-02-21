@@ -39,6 +39,22 @@ def normalize(x):
     """
     return (x - 1) * 100
 
+def obs_normalizer(observation):
+    """ Preprocess observation obtained by environment
+
+    Args:
+        observation: (nb_classes, window_length, num_features) or with info
+
+    Returns: normalized
+
+    """
+    if isinstance(observation, tuple):
+        observation = observation[0]
+    # directly use close/open ratio as feature
+    observation = observation[:, :, 3:4] / observation[:, :, 0:1]
+    observation = normalize(observation)
+    return observation
+
 def create_dataset(filepath):
     """ create the raw dataset from all_stock_5yr.csv. The data is Open,High,Low,Close,Volume
 
