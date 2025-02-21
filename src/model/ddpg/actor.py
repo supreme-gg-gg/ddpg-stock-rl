@@ -11,7 +11,6 @@ import torch.nn.functional as F
 import numpy as np
 import copy
 
-from base import BaseNetwork, FullyConnectedLayers
 from eiie import CNNPredictor, LSTMPredictor
 
 def create_target_network(model: nn.Module):
@@ -21,7 +20,7 @@ def create_target_network(model: nn.Module):
         param.requires_grad = False
     return target
 
-class StockActor(BaseNetwork):
+class StockActor(nn.Module):
     """Actor network for DDPG, responsible for action selection"""
     def __init__(self, state_dim, action_dim, action_bound, learning_rate, tau, batch_size,
                  predictor_type, use_batch_norm):
@@ -35,31 +34,60 @@ class StockActor(BaseNetwork):
         self.use_batch_norm = use_batch_norm
 
         if predictor_type == 'cnn':
-            predictor = CNNPredictor(input_dim=(1, state_dim[1], state_dim[3]), output_dim=(1, 1), use_batch_norm=use_batch_norm)
+            self.predictor = CNNPredictor(input_dim=(1, state_dim[1], state_dim[3]), output_dim=(1, 1), use_batch_norm=use_batch_norm)
+            self.predictor_output = 64
         elif predictor_type == 'lstm':
-            predictor = LSTMPredictor(input_dim=(state_dim[1], state_dim[3]), output_dim=(1, 1), hidden_dim=64, use_batch_norm=use_batch_norm)
+            self.predictor = LSTMPredictor(input_dim=(state_dim[1], state_dim[3]), output_dim=(1, 1), hidden_dim=64, use_batch_norm=use_batch_norm)
+            self.predictor_output = 64
         else:
             raise ValueError('Predictor type not recognized')
         
-        self.fc_layers = FullyConnectedLayers(input_dim=64, output_dim=action_dim[1], use_batch_norm=use_batch_norm)
-        super().__init__(predictor, self.fc_layers)
+        layers = []
+        layers.append(nn.Linear(self.predictor_output, 64))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm1d(64))
+        layers.append(nn.ReLU())
+        layers.append(nn.Linear(64, 64))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm1d(64))
+        layers.append(nn.ReLU())
+        layers.append(nn.Linear(64, action_dim[0]))
+        torch.nn.init.uniform_(layers[-1].weight, a=-0.003, b=0.003)
+
+        self.fc_layers = nn.Sequential(*layers)
 
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         self.target_network = create_target_network(self)
 
     def forward(self, state):
+        """
+        Forward pass with gradient tracking
+        Scales the output to the action bound
+        using a softmax activation function
+        """
         x = self.predictor(state)
         x = self.fc_layers(x)
-        return torch.tanh(x) * self.action_bound
+        # softmax ensure the output is between 0 and 1
+        x = torch.softmax(x, dim=-1)
+        # scale the output to the action bound (portfolio weight)
+        scaled_out = x * self.action_bound
+        return scaled_out
 
-    def train_step(self, inputs, a_gradient):
+    def train_step(self, inputs, critic):
+        """Train the actor network by maximizing the Q value
+        Args:
+            inputs (torch.Tensor): input tensor
+            critic (StockCritic): critic network
+        """
         self.optimizer.zero_grad()
         actions = self.forward(inputs)
-        loss = -torch.mean(actions * a_gradient)
+        q_values = critic.predict(inputs, actions)
+        loss = -torch.mean(q_values)
         loss.backward()
         self.optimizer.step()
 
     def predict(self, inputs):
+        """Predict the action given the input"""
         self.eval()
         with torch.no_grad():
             actions = self.forward(inputs)
@@ -67,6 +95,10 @@ class StockActor(BaseNetwork):
         return actions
 
     def predict_target(self, inputs):
+        """
+        Predict the action given the input using the target network
+        This differs from the predict method in that it uses the target network
+        """
         self.eval()
         with torch.no_grad():
             actions = self.target_network(inputs)
@@ -75,5 +107,6 @@ class StockActor(BaseNetwork):
         return actions
 
     def update_target_network(self):
+        """Update the target network using the current network"""
         for target_param, param in zip(self.target_network.parameters(), self.parameters()):
             target_param.data.copy_(self.tau * param.data + (1. - self.tau) * target_param.data)
