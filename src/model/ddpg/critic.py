@@ -52,7 +52,7 @@ class StockCritic(nn.Module):
         else:
             raise ValueError('Predictor type not recognized')
 
-        self.fc1_state = nn.Linear(self.s_dim[0] * 32, 64) # num_stocks * 32
+        self.fc1_state = nn.Linear(self.s_dim[0] * 64, 64) # num_stocks * 64
         self.fc2_action = nn.Linear(self.a_dim[0], 64)
 
         # Optional batch normalization after combining the two branches.
@@ -102,8 +102,10 @@ class StockCritic(nn.Module):
         Returns:
             tuple: (predicted Q-values, loss value)
         """
+
         self.optimizer.zero_grad()
         q_value = self.forward(state, action)
+        target_q_value = target_q_value.clone().detach() # Ensures that the no_grad context is not entered.
         loss = F.mse_loss(q_value, target_q_value)
         loss.backward()
         self.optimizer.step()

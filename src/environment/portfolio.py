@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 
 import gym
 import gym.spaces
+from gym.utils import seeding
 
 from utils.data import date_to_index, index_to_date
 
@@ -218,7 +219,12 @@ class PortfolioEnv(gym.Env):
         # get the observation space from the data min and max
         self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(len(abbreviation), window_length,
                                                                                  history.shape[-1]), dtype=np.float32)
-        
+
+    def seed(self, seed=None):
+        # This method sets the random seed for the environment
+        self.np_random, seed = seeding.np_random(seed)
+        return [seed]    
+    
     def step(self, action):
         return self._step(action)
 

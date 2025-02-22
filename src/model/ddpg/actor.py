@@ -42,7 +42,7 @@ class StockActor(nn.Module):
             raise ValueError('Predictor type not recognized')
         
         layers = []
-        layers.append(nn.Linear(self.s_dim[0]*32, 64))
+        layers.append(nn.Linear(self.s_dim[0]*64, 64))
         if use_batch_norm:
             layers.append(nn.BatchNorm1d(64))
         layers.append(nn.ReLU())
@@ -81,7 +81,7 @@ class StockActor(nn.Module):
         self.optimizer.zero_grad()
         actions = self.forward(inputs)
         # predict the Q value using the critic network
-        q_values = critic.predict(inputs, actions)
+        q_values = critic.forward(inputs, actions)
         loss = -torch.mean(q_values)
         loss.backward()
         self.optimizer.step()
