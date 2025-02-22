@@ -1,13 +1,13 @@
 """
 PyTorch implementation of DDPG agent.
+Setup up logging using tensorboard.
+Can easily be modified to use wandb if you prefer.
 """
 
 import os
 import json
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter  # Added for TensorBoard integration
 
 from .replay_buffer import ReplayBuffer
@@ -42,6 +42,9 @@ class DDPGAgent(BaseAgent):
         self.writer = SummaryWriter(log_dir=self.summary_path)  # Initialize TensorBoard writer
     
     def save_model(self):
+        """
+        Saves model. Ideally should take in path as well to handle checkpoints but either way works.
+        """
         os.makedirs(os.path.dirname(self.model_save_path), exist_ok=True)
         checkpoint = {
             'actor_state_dict': self.actor.state_dict(),
@@ -51,16 +54,24 @@ class DDPGAgent(BaseAgent):
         print("Model saved in %s" % self.model_save_path)
     
     def load_model(self):
+        """Load model either from checkpoint or for training."""
         checkpoint = torch.load(self.model_save_path, map_location=self.device)
         self.actor.load_state_dict(checkpoint['actor_state_dict'])
         self.critic.load_state_dict(checkpoint['critic_state_dict'])
         print("Model loaded from %s" % self.model_save_path)
     
     def train(self, verbose=True):
+        """
+        During training, checkpoints are saved every 100 episodes.
+        You can load the model from any checkpoint and restart training.
+        When training is complete, the final model is saved.
+        NOTE: num episode is defaulted to 500 for stock
+        """
         num_episodes = self.config['episode']
         max_steps = self.config['max step']
         batch_size = self.config['batch size']
         gamma = self.config['gamma']
+        checkpoint_freq = 100  # Save every 100 episodes
         np.random.seed(self.config['seed'])
         
         for ep in range(num_episodes):
@@ -100,21 +111,13 @@ class DDPGAgent(BaseAgent):
                     
                     # Compute target Q value using target networks.
                     with torch.inference_mode():
-                        # Use the actor to take action
                         next_action = self.actor.predict_target(s2_batch)
-                        # Use the critic to evaluate (Q-value)
                         target_q = self.critic.predict_target(s2_batch, next_action)
-                        # Compute the target Q value (Bellman equation)
                         y = r_batch + gamma * target_q * (1 - done_batch)
                     
-                    # Update critic: MSE loss.
                     current_q, critic_loss = self.critic.train_step(s_batch, a_batch, y)
-                    
-                    # Update actor using the sampled policy gradient.
-                    # pass in the critic to compute the gradients
                     _, actor_loss = self.actor.train_step(s_batch, self.critic)
                     
-                    # Update target networks.
                     self.actor.update_target_network()
                     self.critic.update_target_network()
                     
@@ -125,25 +128,37 @@ class DDPGAgent(BaseAgent):
                 ep_reward += reward
                 observation = next_obs
 
-                # Log some episode statistics to TensorBoard
                 if done or step == max_steps - 1:
                     avg_q = ep_max_q / (step + 1) if step > 0 else 0
                     avg_actor_loss = ep_actor_loss / (step + 1) if step > 0 else 0
                     avg_critic_loss = ep_critic_loss / (step + 1) if step > 0 else 0
                     if verbose:
                         print(f"Episode: {ep}, Reward: {ep_reward:.2f}, Avg Q: {avg_q:.4f}")
-                    # Log to TensorBoard
                     self.writer.add_scalar("Reward", ep_reward, ep)
                     self.writer.add_scalar("Avg_Q", avg_q, ep)
                     self.writer.add_scalar("Actor_Loss", avg_actor_loss, ep)
                     self.writer.add_scalar("Critic_Loss", avg_critic_loss, ep)
                     break
+            
+            # Save checkpoint periodically
+            if (ep + 1) % checkpoint_freq == 0:
+                checkpoint_path = self.model_save_path.replace('.pt', f'_ep{ep+1}.pt')
+                checkpoint = {
+                    'episode': ep + 1,
+                    'actor_state_dict': self.actor.state_dict(),
+                    'critic_state_dict': self.critic.state_dict()
+                }
+                torch.save(checkpoint, checkpoint_path)
+                print(f"Checkpoint saved at episode {ep+1}")
         
-        self.save_model()
-        self.writer.flush()  # Ensure logs are written
+        self.save_model()  # Save final model
+        self.writer.flush()
         print("Training completed.")
     
     def predict(self, observation):
+        """
+        Predict action given observation.
+        """
         if self.obs_normalizer:
             observation = self.obs_normalizer(observation)
         obs_tensor = torch.tensor(np.expand_dims(observation, axis=0), dtype=torch.float32, device=self.device)
@@ -153,4 +168,8 @@ class DDPGAgent(BaseAgent):
         return action
 
     def predict_single(self, observation):
+        """
+        Predict action given single observation.
+        NOTE: I believe the original predict single is deprecated it just uses the regular predict function.
+        """
         return self.predict(observation)

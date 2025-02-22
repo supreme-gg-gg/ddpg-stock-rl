@@ -23,7 +23,7 @@ class StockCritic(nn.Module):
     It internally builds the network architecture (using a predictor and two branches)
     and also maintains a target network for stable training.
     """
-    def __init__(self, state_dim, action_dim, learning_rate, tau, num_actor_vars,
+    def __init__(self, state_dim, action_dim, learning_rate, tau,
                  predictor_type, use_batch_norm):
         """
         Args:
