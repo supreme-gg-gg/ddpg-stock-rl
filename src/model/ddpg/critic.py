@@ -53,7 +53,7 @@ class StockCritic(nn.Module):
             raise ValueError('Predictor type not recognized')
 
         self.fc1_state = nn.Linear(self.s_dim[0] * 32, 64) # num_stocks * 32
-        self.fc2_action = nn.Linear(self.a_dim[1], 64)
+        self.fc2_action = nn.Linear(self.a_dim[0], 64)
 
         # Optional batch normalization after combining the two branches.
         if self.use_batch_norm:
@@ -171,3 +171,7 @@ class StockCritic(nn.Module):
         """
         for target_param, param in zip(self.target_network.parameters(), self.parameters()):
             target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
+
+
+if __name__ == '__main__':
+    critic = StockCritic(state_dim=(10, 20), action_dim=(10), learning_rate=1e-3, tau=1e-3, predictor_type='lstm', use_batch_norm=True)
