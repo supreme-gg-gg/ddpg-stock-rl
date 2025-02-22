@@ -48,7 +48,7 @@ class StockCritic(nn.Module):
         if predictor_type == 'cnn':
             self.predictor = CNNPredictor(input_dim=(1, state_dim[1], state_dim[3]), output_dim=(1, 1), use_batch_norm=use_batch_norm)
         elif predictor_type == 'lstm':
-            self.predictor = LSTMPredictor(input_dim=(state_dim[1], state_dim[3]), output_dim=(1, 1), hidden_dim=64, use_batch_norm=use_batch_norm)
+            self.predictor = LSTMPredictor(input_dim=state_dim, output_dim=(1, 1), hidden_dim=64, use_batch_norm=use_batch_norm)
         else:
             raise ValueError('Predictor type not recognized')
 

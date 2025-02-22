@@ -26,7 +26,7 @@ class StockActor(nn.Module):
     def __init__(self, state_dim, action_dim, action_bound, learning_rate, tau, batch_size,
                  predictor_type, use_batch_norm):
         super(StockActor, self).__init__()
-        self.s_dim = state_dim      # e.g., [nb_classes, window_length, 4] -> preprocess to only one feature
+        self.s_dim = state_dim      # e.g., [nb_classes, window_length, 4] -> preprocess to only one feature hence [nb_classes, window_length]
         self.a_dim = action_dim      # e.g., [nb_actions]
         self.action_bound = action_bound
         self.tau = tau
