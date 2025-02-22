@@ -6,7 +6,7 @@ The original code in Tensorflow 1.x can be found [here](https://github.com/vermo
 
 ## Algorithms used in this work
 
-- Deep Deterministic Policy Gradient using EIIE (Ensemble of Identical Independent Evaluators) architecture (CNN and LSTM)
+- Deep Deterministic Policy Gradient using EIIE (Ensemble of Identical Independent Evaluators) architecture (CNN and LSTM) as the actor and critic networks
 
 - Imitation Learning (work in progress) using CNN and LSTM as benchmark
 
