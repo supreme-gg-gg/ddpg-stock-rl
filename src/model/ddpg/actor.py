@@ -12,7 +12,7 @@ import numpy as np
 import copy
 from typing import Tuple
 
-from eiie import CNNPredictor, LSTMPredictor
+from .eiie import CNNPredictor, LSTMPredictor
 
 def create_target_network(model: nn.Module):
     """Create a target network from the model"""

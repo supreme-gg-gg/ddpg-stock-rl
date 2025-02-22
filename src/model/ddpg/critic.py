@@ -1,4 +1,4 @@
-from eiie import CNNPredictor, LSTMPredictor
+from .eiie import CNNPredictor, LSTMPredictor
 
 import copy
 import torch
