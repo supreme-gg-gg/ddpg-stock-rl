@@ -102,11 +102,11 @@ class StockActor(nn.Module):
         Predict the action given the input using the target network
         This differs from the predict method in that it uses the target network
         """
-        self.eval()
+        self.target_network.eval()
         with torch.inference_mode():
             actions = self.target_network(inputs)
             # actions = torch.tanh(actions) * self.action_bound
-        self.train()
+        self.target_network.train()
         return actions
 
     def update_target_network(self):
