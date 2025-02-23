@@ -61,7 +61,7 @@ class DDPGAgent(BaseAgent):
         self.critic.load_state_dict(checkpoint['critic_state_dict'])
         print("Model loaded from %s" % self.model_save_path)
     
-    def train(self, verbose=True):
+    def train(self, verbose=True, more_verbose=False):
         """
         During training, checkpoints are saved every 100 episodes.
         You can load the model from any checkpoint and restart training.

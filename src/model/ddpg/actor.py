@@ -103,7 +103,7 @@ class StockActor(nn.Module):
         self.eval()
         with torch.no_grad():
             actions = self.target_network(inputs)
-            actions = torch.tanh(actions) * self.action_bound
+            # actions = torch.tanh(actions) * self.action_bound
         self.train()
         return actions
 
