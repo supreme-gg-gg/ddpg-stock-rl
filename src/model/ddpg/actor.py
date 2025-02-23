@@ -92,7 +92,7 @@ class StockActor(nn.Module):
     def predict(self, inputs):
         """Predict the action given the input"""
         self.eval()
-        with torch.inference_mode():
+        with torch.no_grad():
             actions = self.forward(inputs)
         self.train()
         return actions
@@ -103,7 +103,7 @@ class StockActor(nn.Module):
         This differs from the predict method in that it uses the target network
         """
         self.target_network.eval()
-        with torch.inference_mode():
+        with torch.no_grad():
             actions = self.target_network(inputs)
             # actions = torch.tanh(actions) * self.action_bound
         self.target_network.train()
