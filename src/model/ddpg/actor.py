@@ -81,12 +81,18 @@ class StockActor(nn.Module):
         self.optimizer.zero_grad()
         actions = self.forward(inputs)
         # predict the Q value using the critic network
-        critic.eval()
+
+        for param in critic.parameters():
+            param.requires_grad = False
+
         q_values = critic.forward(inputs, actions)
-        critic.train()
         loss = -torch.mean(q_values)
         loss.backward()
         self.optimizer.step()
+
+        for param in critic.parameters():
+            param.requires_grad = True
+
         return q_values, loss.item()
 
     def predict(self, inputs):
