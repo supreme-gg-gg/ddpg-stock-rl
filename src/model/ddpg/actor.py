@@ -81,7 +81,9 @@ class StockActor(nn.Module):
         self.optimizer.zero_grad()
         actions = self.forward(inputs)
         # predict the Q value using the critic network
+        critic.eval()
         q_values = critic.forward(inputs, actions)
+        critic.train()
         loss = -torch.mean(q_values)
         loss.backward()
         self.optimizer.step()
@@ -90,7 +92,7 @@ class StockActor(nn.Module):
     def predict(self, inputs):
         """Predict the action given the input"""
         self.eval()
-        with torch.no_grad():
+        with torch.inference_mode():
             actions = self.forward(inputs)
         self.train()
         return actions
@@ -101,7 +103,7 @@ class StockActor(nn.Module):
         This differs from the predict method in that it uses the target network
         """
         self.eval()
-        with torch.no_grad():
+        with torch.inference_mode():
             actions = self.target_network(inputs)
             # actions = torch.tanh(actions) * self.action_bound
         self.train()

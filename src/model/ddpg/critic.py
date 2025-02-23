@@ -104,8 +104,9 @@ class StockCritic(nn.Module):
             tuple: (predicted Q-values, loss value)
         """
 
-        self.optimizer.zero_grad()
         q_value = self.forward(state, action)
+
+        self.optimizer.zero_grad()
         target_q_value = target_q_value.clone().detach() # Ensures that the no_grad context is not entered.
         loss = F.mse_loss(q_value, target_q_value)
         loss.backward()
@@ -124,7 +125,7 @@ class StockCritic(nn.Module):
             torch.Tensor: Predicted Q-values.
         """
         self.eval()
-        with torch.no_grad():
+        with torch.inference_mode():
             q_value = self.forward(state, action)
         self.train()
         return q_value
@@ -141,7 +142,7 @@ class StockCritic(nn.Module):
             torch.Tensor: Predicted Q-values from the target network.
         """
         self.target_network.eval()
-        with torch.no_grad():
+        with torch.inference_mode():
             q_value = self.target_network(state, action)
         self.target_network.train()
         return q_value
