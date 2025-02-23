@@ -63,6 +63,7 @@ class StockCritic(nn.Module):
         self.out = nn.Linear(64, 1)
         # Initialize the final layer weights to Uniform[-3e-3, 3e-3]
         nn.init.uniform_(self.out.weight, -0.003, 0.003)
+        nn.init.uniform_(self.out.bias, -0.003, 0.003)
 
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         self.target_network = create_target_network(self)

@@ -77,7 +77,7 @@ if __name__ == '__main__':
                              predictor_type=predictor_type, use_batch_norm=use_batch_norm)
     
     # Initalize the model (no need to load weight unless using checkpoints)
-    ddpg_model = DDPGAgent(env, actor, critic, actor_noise, obs_normalizer=obs_normalizer,
+    ddpg_model = DDPGAgent(env, actor, critic, 0.95, actor_noise, obs_normalizer=obs_normalizer,
                         config_file='config/stock.json', model_save_path=model_save_path,
                         summary_path=summary_path)
     ddpg_model.train() # this saves automatically

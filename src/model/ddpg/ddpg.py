@@ -16,7 +16,7 @@ from .actor import StockActor
 from .critic import StockCritic
 
 class DDPGAgent(BaseAgent):
-    def __init__(self, env, actor: StockActor, critic: StockCritic, actor_noise, 
+    def __init__(self, env, actor: StockActor, critic: StockCritic, gamma, actor_noise, 
                  obs_normalizer=None, action_processor=None,
                  config_file='config/default.json',
                  model_save_path='weights/ddpg/ddpg.pt', summary_path='results/ddpg/'):
@@ -29,6 +29,7 @@ class DDPGAgent(BaseAgent):
         self.env = env
         self.actor = actor
         self.critic = critic
+        self.gamma = gamma
         self.actor_noise = actor_noise
         self.obs_normalizer = obs_normalizer
         self.action_processor = action_processor
@@ -70,7 +71,6 @@ class DDPGAgent(BaseAgent):
         num_episodes = self.config['episode']
         max_steps = self.config['max step']
         batch_size = self.config['batch size']
-        gamma = self.config['gamma']
         checkpoint_freq = 100  # Save every 100 episodes
         np.random.seed(self.config['seed'])
         
@@ -113,7 +113,7 @@ class DDPGAgent(BaseAgent):
                     with torch.inference_mode():
                         next_action = self.actor.predict_target(s2_batch)
                         target_q = self.critic.predict_target(s2_batch, next_action)
-                        y = r_batch * 10 + gamma * target_q * (1 - done_batch)
+                        y = r_batch + self.gamma * target_q * (1 - done_batch)
                     
                     current_q, critic_loss = self.critic.train_step(s_batch, a_batch, y)
                     _, actor_loss = self.actor.train_step(s_batch, self.critic)
