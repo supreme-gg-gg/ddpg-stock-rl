@@ -113,7 +113,7 @@ class DDPGAgent(BaseAgent):
                     with torch.inference_mode():
                         next_action = self.actor.predict_target(s2_batch)
                         target_q = self.critic.predict_target(s2_batch, next_action)
-                        y = r_batch + self.gamma * target_q * (1 - done_batch)
+                        y = r_batch + self.gamma * target_q * done_batch
                     
                     current_q, critic_loss = self.critic.train_step(s_batch, a_batch, y)
                     _, actor_loss = self.actor.train_step(s_batch, self.critic)
