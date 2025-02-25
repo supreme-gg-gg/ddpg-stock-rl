@@ -329,7 +329,6 @@ class PortfolioEnv(gym.Env):
             np.sum(weights), 1.0, 3, err_msg='weights should sum to 1. action="%s"' % weights)
 
         observation, done1, ground_truth_obs, = self.src._step()
-        self.src.step
 
         # concatenate observation with ones
         cash_observation = np.ones((1, self.window_length, observation.shape[2]))
@@ -346,7 +345,7 @@ class PortfolioEnv(gym.Env):
 
         if self.pvm:
             reward, info, done2 = self.sim._step(weights, y1, self.src.step)
-            prev_weights = self.sim.fetch_prev_weights(self.src.step)
+            prev_weights = self.sim.fetch_prev_weights(self.src.step + 1)
         else:
             reward, info, done2 = self.sim._step(weights, y1)
 

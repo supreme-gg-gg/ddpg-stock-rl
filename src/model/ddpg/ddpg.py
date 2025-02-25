@@ -90,7 +90,7 @@ class DDPGAgent(BaseAgent):
             for step in range(max_steps):
 
                 obs_tensor = torch.tensor(np.expand_dims(observation, axis=0), dtype=torch.float32, device=self.device)
-                print(prev_weights)
+                print(f"Prev weights before tensor conversion: {prev_weights}")
                 prev_weights = torch.tensor(np.expand_dims(prev_weights, axis=0), dtype=torch.float32, device=self.device)
 
                 if self.pvm:
@@ -104,9 +104,10 @@ class DDPGAgent(BaseAgent):
                     action_taken = action
 
                 (next_obs, weights), reward, done, _ = self.env.step(action_taken)
-                # print(next_obs.shape)
                 if self.obs_normalizer:
                     next_obs = self.obs_normalizer(next_obs)
+                prev_weights = prev_weights.cpu().detach().numpy()
+                print(f"Prev weights: {prev_weights}")
                 self.buffer.add((observation, prev_weights), action, reward, done, next_obs)
                 
                 if self.buffer.size() >= batch_size:
@@ -145,6 +146,7 @@ class DDPGAgent(BaseAgent):
                     ep_critic_loss += critic_loss
                 
                 ep_reward += reward
+                print(f"Weights: {weights}")
                 observation, prev_weights = next_obs, weights
 
                 if done or step == max_steps - 1:
