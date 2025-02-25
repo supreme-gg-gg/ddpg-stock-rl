@@ -119,3 +119,10 @@ class StockActor(nn.Module):
         """Update the target network using the current network"""
         for target_param, param in zip(self.target_network.parameters(), self.parameters()):
             target_param.data.copy_(self.tau * param.data + (1. - self.tau) * target_param.data)
+
+
+class StockActorPVM(StockActor):
+    def __init__(self, state_dim, action_dim, action_bound, learning_rate, tau, batch_size,
+                 predictor_type, use_batch_norm):
+        super(StockActorPVM, self).__init__(state_dim, action_dim, action_bound, learning_rate, tau, batch_size,
+                 predictor_type, use_batch_norm)

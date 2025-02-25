@@ -17,7 +17,7 @@ from .critic import StockCritic
 
 class DDPGAgent(BaseAgent):
     def __init__(self, env, actor: StockActor, critic: StockCritic, gamma, actor_noise, 
-                 obs_normalizer=None, action_processor=None,
+                 obs_normalizer=None, action_processor=None, pvm=False,
                  config_file='config/default.json',
                  model_save_path='weights/ddpg/ddpg.pt', summary_path='results/ddpg/'):
         
@@ -33,6 +33,7 @@ class DDPGAgent(BaseAgent):
         self.actor_noise = actor_noise
         self.obs_normalizer = obs_normalizer
         self.action_processor = action_processor
+        self.pvm = pvm
         self.model_save_path = model_save_path
         self.summary_path = summary_path
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -86,6 +87,7 @@ class DDPGAgent(BaseAgent):
             ep_critic_loss = 0
             
             for step in range(max_steps):
+                
                 obs_tensor = torch.tensor(np.expand_dims(observation, axis=0), dtype=torch.float32, device=self.device)
                 action = self.actor.predict(obs_tensor).squeeze(0).cpu().detach().numpy()
                 action += self.actor_noise()

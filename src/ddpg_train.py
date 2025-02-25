@@ -8,8 +8,8 @@ import numpy as np
 import argparse
 import pprint
 
-from model.ddpg.actor import StockActor
-from model.ddpg.critic import StockCritic
+from model.ddpg.actor import StockActor, StockActorPVM
+from model.ddpg.critic import StockCritic, StockCriticPVM
 from model.ddpg.ddpg import DDPGAgent
 from model.ddpg.ornstein_uhlenbeck import OrnsteinUhlenbeckActionNoise
 
@@ -25,6 +25,7 @@ if __name__ == '__main__':
     parser.add_argument('--predictor_type', '-p', help='cnn or lstm predictor', required=True)
     parser.add_argument('--window_length', '-w', help='observation window length', required=True)
     parser.add_argument('--batch_norm', '-b', help='whether to use batch normalization', required=True)
+    parser.add_argument('--pvm', '-m', help='whether to use PVM', required=True)
 
     args = vars(parser.parse_args())
 
@@ -42,6 +43,7 @@ if __name__ == '__main__':
     num_training_time = 1095
     window_length = int(args['window_length'])
     nb_classes = len(target_stocks) + 1
+    pvm = args['pvm']
 
     # get target history
     target_history = np.empty(shape=(len(target_stocks), num_training_time, history.shape[2]))
@@ -50,7 +52,7 @@ if __name__ == '__main__':
     print(target_history.shape)
 
     # setup environment
-    env = PortfolioEnv(target_history, target_stocks, steps=1000, window_length=window_length)
+    env = PortfolioEnv(target_history, target_stocks, steps=1000, window_length=window_length, pvm=pvm)
 
     # do some setup and checking
     action_dim = [nb_classes]
@@ -71,10 +73,17 @@ if __name__ == '__main__':
     
     # create actor critic noise and agent
     actor_noise = OrnsteinUhlenbeckActionNoise(mu=np.zeros(action_dim))
-    actor = StockActor(state_dim, action_dim, action_bound, 1e-4, tau, batch_size,
-                        predictor_type, use_batch_norm)
-    critic = StockCritic(state_dim=state_dim, action_dim=action_dim, learning_rate=1e-3, tau=1e-3,
+
+    if pvm:
+        actor = StockActorPVM(state_dim, action_dim, action_bound, 1e-4, tau, batch_size,
+                            predictor_type, use_batch_norm)
+        critic = StockCriticPVM(state_dim=state_dim, action_dim=action_dim, learning_rate=1e-3, tau=1e-3,
                              predictor_type=predictor_type, use_batch_norm=use_batch_norm)
+    else:
+        actor = StockActor(state_dim, action_dim, action_bound, 1e-4, tau, batch_size,
+                            predictor_type, use_batch_norm)
+        critic = StockCritic(state_dim=state_dim, action_dim=action_dim, learning_rate=1e-3, tau=1e-3,
+                                predictor_type=predictor_type, use_batch_norm=use_batch_norm)
     
     # Initalize the model (no need to load weight unless using checkpoints)
     ddpg_model = DDPGAgent(env, actor, critic, 0.95, actor_noise, obs_normalizer=obs_normalizer,

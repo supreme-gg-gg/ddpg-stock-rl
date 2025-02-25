@@ -166,6 +166,70 @@ class PortfolioSim(object):
         self.p0 = 1.0
 
 
+class PortfolioSimWithPVM(PortfolioSim):
+    """
+    We implement the PVM from the paper [Jiang 2017](https://arxiv.org/abs/1706.10059)
+    PVM is initialized to be zero and is updated at each step with the current portfolio weights
+    At the first step which the agent makes a prediction, the PVM is [1, 0, 0, 0, ...] which means that all assets are in cash bias
+    """
+
+    def __init__(self, asset_names=list(), window_length = 50, steps=730, trading_cost=0.0025, time_cost=0.0):
+        super(PortfolioSimWithPVM, self).__init__(asset_names, steps, trading_cost, time_cost)
+        self.window_length = window_length
+
+    def _step(self, w1, y1, step): 
+        assert w1.shape == y1.shape, 'w1 and y1 must have the same shape'
+        assert y1[0] == 1.0, 'y1[0] must be 1'
+
+        p0 = self.p0
+        dw1 = (y1 * w1) / (np.dot(y1, w1) + eps)
+        self.append_current_weights(step, dw1)
+        prev_dw = self.fetch_prev_weights(step) # we keep the closing weights after the price movements in our pvm
+
+        mu1 = self.cost * (np.abs(w1 - prev_dw)).sum()
+        assert mu1 < 1.0, 'Cost is larger than current holding'
+
+        p1 = p0 * (1 - mu1) * np.dot(y1, w1)
+        p1 = p1 * (1 - self.time_cost)
+
+        rho1 = p1 / p0 - 1  # rate of returns
+        r1 = np.log((p1 + eps) / (p0 + eps))  # log rate of return
+        reward = r1 / self.steps * 1000.  # (22) average logarithmic accumulated return
+        # remember for next step
+        self.p0 = p1
+
+        # if we run out of money, we're done (losing all the money)
+        done = p1 == 0
+
+        info = {
+            "reward": reward,
+            "log_return": r1,
+            "portfolio_value": p1,
+            "return": y1.mean(),
+            "rate_of_return": rho1,
+            "weights_mean": w1.mean(),
+            "weights_std": w1.std(),
+            "cost": mu1,
+        }
+        self.infos.append(info)
+        return reward, info, done
+
+
+    def append_current_weights(self, step, weights):
+        self.pvm[step + self.window_length, :] = weights
+
+    def fetch_prev_weights(self, step):
+        return self.pvm[step + self.window_length - 1, :]
+    
+    def reset(self):
+        self.infos = []
+        self.p0 = 1.0
+
+        # everything in cash to begin with
+        self.pvm = np.zeros(shape=(self.steps + 1, len(self.asset_names) + 1)) 
+        self.pvm[self.window_length - 1, 0] = 1.0
+
+
 class PortfolioEnv(gym.Env):
     """
     An environment for financial portfolio management.
@@ -184,7 +248,8 @@ class PortfolioEnv(gym.Env):
                  time_cost=0.00,
                  window_length=50,
                  start_idx=0,
-                 sample_start_date=None
+                 sample_start_date=None,
+                 pvm = False
                  ):
         """
         An environment for financial portfolio management.
@@ -201,15 +266,25 @@ class PortfolioEnv(gym.Env):
         self.window_length = window_length
         self.num_stocks = history.shape[0]
         self.start_idx = start_idx
-
+        self.pvm = pvm
         self.src = DataGenerator(history, abbreviation, steps=steps, window_length=window_length, start_idx=start_idx,
                                  start_date=sample_start_date)
 
-        self.sim = PortfolioSim(
-            asset_names=abbreviation,
-            trading_cost=trading_cost,
-            time_cost=time_cost,
-            steps=steps)
+        if self.pvm:
+            self.sim = PortfolioSimWithPVM(
+                asset_names=abbreviation,
+                trading_cost=trading_cost,
+                time_cost=time_cost,
+                steps=steps,
+                window_length=self.window_length)
+
+        else:
+            self.sim = PortfolioSim(
+                asset_names=abbreviation,
+                trading_cost=trading_cost,
+                time_cost=time_cost,
+                steps=steps)
+        
 
         # openai gym attributes
         # action will be the portfolio weights from 0 to 1 for each asset
@@ -217,8 +292,10 @@ class PortfolioEnv(gym.Env):
             0, 1, shape=(len(self.src.asset_names) + 1,), dtype=np.float32)  # include cash
 
         # get the observation space from the data min and max
-        self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(len(abbreviation), window_length,
-                                                                                 history.shape[-1]), dtype=np.float32)
+        self.observation_space = gym.spaces.Tuple((
+            gym.spaces.Box(low=-np.inf, high=np.inf, shape=(len(abbreviation), window_length, history.shape[-1]), dtype=np.float32),
+            gym.spaces.Box(low=0, high=1, shape=(1, len(abbreviation)), dtype=np.float32)
+        ))
 
     def seed(self, seed=None):
         # This method sets the random seed for the environment
@@ -251,7 +328,8 @@ class PortfolioEnv(gym.Env):
         np.testing.assert_almost_equal(
             np.sum(weights), 1.0, 3, err_msg='weights should sum to 1. action="%s"' % weights)
 
-        observation, done1, ground_truth_obs = self.src._step()
+        observation, done1, ground_truth_obs, = self.src._step()
+        self.src.step
 
         # concatenate observation with ones
         cash_observation = np.ones((1, self.window_length, observation.shape[2]))
@@ -264,7 +342,13 @@ class PortfolioEnv(gym.Env):
         close_price_vector = observation[:, -1, 3]
         open_price_vector = observation[:, -1, 0]
         y1 = close_price_vector / open_price_vector
-        reward, info, done2 = self.sim._step(weights, y1)
+        prev_weights = None
+
+        if self.pvm:
+            reward, info, done2 = self.sim._step(weights, y1, self.src.step)
+            prev_weights = self.sim.fetch_prev_weights(self.src.step)
+        else:
+            reward, info, done2 = self.sim._step(weights, y1)
 
         # calculate return for buy and hold a bit of each asset
         info['market_value'] = np.cumprod([inf["return"] for inf in self.infos + [info]])[-1]
@@ -275,7 +359,7 @@ class PortfolioEnv(gym.Env):
 
         self.infos.append(info)
 
-        return observation, reward, done1 or done2, info
+        return (observation, prev_weights), reward, done1 or done2, info
     
     def reset(self):
         return self._reset()
@@ -288,9 +372,10 @@ class PortfolioEnv(gym.Env):
         observation = np.concatenate((cash_observation, observation), axis=0)
         cash_ground_truth = np.ones((1, 1, ground_truth_obs.shape[2]))
         ground_truth_obs = np.concatenate((cash_ground_truth, ground_truth_obs), axis=0)
+        prev_weights = np.array([1.0] + [0.0] * len(self.src.asset_names))
         info = {}
         info['next_obs'] = ground_truth_obs
-        return observation, info
+        return (observation, prev_weights), info
 
     def _render(self, mode='human', close=False):
         if close:

@@ -176,6 +176,12 @@ class StockCritic(nn.Module):
         for target_param, param in zip(self.target_network.parameters(), self.parameters()):
             target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
 
+class StockCriticPVM(StockCritic):
+    def __init__(self, state_dim, action_dim, learning_rate, tau,
+                 predictor_type, use_batch_norm):
+        super(StockCriticPVM, self).__init__(state_dim, action_dim, learning_rate, tau,
+                 predictor_type, use_batch_norm)
+        
 
 if __name__ == '__main__':
     critic = StockCritic(state_dim=(10, 20), action_dim=(10), learning_rate=1e-3, tau=1e-3, predictor_type='lstm', use_batch_norm=True)

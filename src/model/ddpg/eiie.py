@@ -62,10 +62,6 @@ class LSTMPredictor(PredictorBase):
         # Pass through LSTM. PyTorch LSTM returns the full sequence; we take the last time step.
         x, _ = self.lstm(x)  # shape: [batch_size * num_stocks, window_length, hidden_dim]
         x = x[:, -1, :]      # shape: [batch_size * num_stocks, hidden_dim]
-        
-        # Reshape back to [batch_size, num_stocks, hidden_dim]
-        x = x.view(batch_size, num_stocks, self.hidden_dim)
-        
         # Flatten the last two dimensions to obtain [batch_size, num_stocks * hidden_dim]
         x = x.view(batch_size, -1)
         return x
