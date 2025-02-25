@@ -118,7 +118,7 @@ class DDPGAgent(BaseAgent):
                     (s_batch, w_batch), a_batch, r_batch, done_batch, s2_batch = self.buffer.sample_batch(batch_size)
                     s_batch = torch.tensor(s_batch, dtype=torch.float32, device=self.device)
                     w_batch = torch.tensor(w_batch, dtype=torch.float32, device=self.device).squeeze(1)
-                    w_2batch = torch.cat((w_batch[:-1, :], weights), dim = 0).clone().detach()
+                    w_2batch = torch.cat((w_batch[1:, :], weights), dim = 0).clone().detach()
                     a_batch = torch.tensor(a_batch, dtype=torch.float32, device=self.device)
                     r_batch = torch.tensor(r_batch, dtype=torch.float32, device=self.device).unsqueeze(1)
                     done_batch = torch.tensor(done_batch, dtype=torch.float32, device=self.device).unsqueeze(1)

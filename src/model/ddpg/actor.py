@@ -130,15 +130,26 @@ class StockActorPVM(StockActor):
                  predictor_type, use_batch_norm)
         
         # concatenate the weights
-        self.lstm_hidden_dim = 32
+        self.lstm_hidden_dim = 16
+        self.target_network.lstm_hidden_dim = self.lstm_hidden_dim
         self.predictor = LSTMPredictor(input_dim=state_dim, output_dim=(1, 1), hidden_dim=self.lstm_hidden_dim, use_batch_norm=use_batch_norm)
         self.target_network.predictor = self.predictor
-        new_first_layer = nn.Linear(self.s_dim[0] * (self.lstm_hidden_dim + 1), 64)
-        self.fc_layers[0] = new_first_layer
-        self.target_network.fc_layers[0] = new_first_layer
+        self.fc_layers[0] = nn.Linear(self.s_dim[0] * (self.lstm_hidden_dim + 1), 64)
+        self.target_network.fc_layers[0] = self.fc_layers[0]
+
+        # self.conv1d = nn.Conv1d(in_channels=self.lstm_hidden_dim + 1, out_channels=32, kernel_size=1)
+        # self.fc1 = nn.Linear(32 * self.s_dim[0], 64)
+        # self.bn1 = nn.BatchNorm1d(64)
+        # self.fc2 = nn.Linear(64, self.s_dim[0])
+        # self.target_network.conv1d = self.conv1d
+        # self.target_network.fc1 = self.fc1
+        # self.target_network.bn1 = self.bn1
+        # self.target_network.fc2 = self.fc2
+
 
     def forward(self, state, weights):
         x = self.predictor(state)
+        x = x.view(-1, self.s_dim[0] * self.lstm_hidden_dim)
         x = torch.cat((x, weights), dim=1)
         x = self.fc_layers(x)
         # softmax ensure the output is between 0 and 1
@@ -146,6 +157,27 @@ class StockActorPVM(StockActor):
         # scale the output to the action bound (portfolio weight)
         scaled_out = x * self.action_bound
         return scaled_out
+    
+    # def forward(self, state, weights):
+    #     batch_size = state.size(0)
+    #     lstm_out = self.predictor(state)
+    #     lstm_out = lstm_out.view(-1, self.s_dim[0], self.lstm_hidden_dim)
+
+    #     prev_w = weights.unsqueeze(-1)
+    #     x = torch.cat([lstm_out, prev_w], dim=-1)
+    #     x = x.permute(0, 2, 1)
+    #     x = self.conv1d(x)
+    #     x = F.relu(x)
+    #     x = x.view(batch_size, -1)
+    #     x = self.fc1(x)
+    #     if self.use_batch_norm:
+    #         x = self.bn1(x)
+    #     x = F.relu(x)
+    #     x = self.fc2(x)  # shape: [batch_size, num_stocks]
+    #     x = torch.softmax(x, dim=-1)
+        
+    #     scaled_out = x * self.action_bound
+    #     return scaled_out
     
     def predict(self, state, weights):
         """Predict the action given the input"""

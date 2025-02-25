@@ -63,5 +63,4 @@ class LSTMPredictor(PredictorBase):
         x, _ = self.lstm(x)  # shape: [batch_size * num_stocks, window_length, hidden_dim]
         x = x[:, -1, :]      # shape: [batch_size * num_stocks, hidden_dim]
         # Flatten the last two dimensions to obtain [batch_size, num_stocks * hidden_dim]
-        x = x.view(batch_size, -1)
         return x
