@@ -85,14 +85,13 @@ class DDPGAgent(BaseAgent):
             ep_max_q = 0
             ep_actor_loss = 0
             ep_critic_loss = 0
-            prev_weights = np.array([1.0] + [0.0] * (self.env.num_stocks), dtype=np.float32)
+            prev_weights = torch.tensor([1.0] + [0.0] * (self.env.num_stocks), dtype=torch.float32).unsqueeze(0).to(self.device)
             
             for step in range(max_steps):
 
                 obs_tensor = torch.tensor(np.expand_dims(observation, axis=0), dtype=torch.float32, device=self.device)
                 
                 if self.pvm:
-                    prev_weights = torch.tensor(np.expand_dims(prev_weights, axis=0), dtype=torch.float32, device=self.device)
                     action = self.actor.predict(obs_tensor, prev_weights).squeeze(0).cpu().detach().numpy()
                 else:
                     action = self.actor.predict(obs_tensor).squeeze(0).cpu().detach().numpy()
@@ -103,9 +102,14 @@ class DDPGAgent(BaseAgent):
                     action_taken = action
 
                 (next_obs, weights), reward, done, _ = self.env.step(action_taken)
+
+                if self.pvm:
+                    weights = torch.tensor(np.expand_dims(weights, axis=0), dtype=torch.float32, device=self.device)
+
                 if self.obs_normalizer:
                     next_obs = self.obs_normalizer(next_obs)
                 prev_weights = prev_weights.squeeze(0).cpu().detach().numpy()
+
 
                 self.buffer.add((observation, prev_weights), action, reward, done, next_obs)
                 
@@ -114,6 +118,7 @@ class DDPGAgent(BaseAgent):
                     (s_batch, w_batch), a_batch, r_batch, done_batch, s2_batch = self.buffer.sample_batch(batch_size)
                     s_batch = torch.tensor(s_batch, dtype=torch.float32, device=self.device)
                     w_batch = torch.tensor(w_batch, dtype=torch.float32, device=self.device).squeeze(1)
+                    w_2batch = torch.cat((w_batch[:-1, :], weights), dim = 0).clone().detach()
                     a_batch = torch.tensor(a_batch, dtype=torch.float32, device=self.device)
                     r_batch = torch.tensor(r_batch, dtype=torch.float32, device=self.device).unsqueeze(1)
                     done_batch = torch.tensor(done_batch, dtype=torch.float32, device=self.device).unsqueeze(1)
@@ -123,8 +128,8 @@ class DDPGAgent(BaseAgent):
                     # we're passing the same weights through the target and the online network
                     with torch.inference_mode():
                         if self.pvm:
-                            next_action = self.actor.predict_target(s2_batch, w_batch)
-                            target_q = self.critic.predict_target(s2_batch, next_action, w_batch)
+                            next_action = self.actor.predict_target(s2_batch, w_2batch)
+                            target_q = self.critic.predict_target(s2_batch, next_action, w_2batch)
                         else:
                             next_action = self.actor.predict_target(s2_batch)
                             target_q = self.critic.predict_target(s2_batch, next_action)
