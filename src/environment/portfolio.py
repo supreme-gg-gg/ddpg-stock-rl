@@ -316,7 +316,6 @@ class PortfolioEnv(gym.Env):
             action.shape,
             (len(self.sim.asset_names) + 1,)
         )
-
         # normalise just in case
         action = np.clip(action, 0, 1)
 
@@ -357,6 +356,7 @@ class PortfolioEnv(gym.Env):
         info['next_obs'] = ground_truth_obs
 
         self.infos.append(info)
+        print(prev_weights)
 
         return (observation, prev_weights), reward, done1 or done2, info
     
