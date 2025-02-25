@@ -226,7 +226,7 @@ class PortfolioSimWithPVM(PortfolioSim):
         self.p0 = 1.0
 
         # everything in cash to begin with for all periods
-        self.pvm = np.zeros(shape=(self.steps + 1, len(self.asset_names) + 1)) 
+        self.pvm = np.zeros(shape=(self.steps + 50, len(self.asset_names) + 1)) 
         self.pvm[:, 0] = 1.0
 
 

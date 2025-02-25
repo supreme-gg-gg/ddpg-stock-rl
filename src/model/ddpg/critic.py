@@ -183,6 +183,8 @@ class StockCriticPVM(StockCritic):
                  predictor_type, use_batch_norm)
         
         self.lstm_hidden_dim = 32
+        self.predictor = LSTMPredictor(input_dim=state_dim, output_dim=(1, 1), hidden_dim=self.lstm_hidden_dim, use_batch_norm=use_batch_norm)
+        self.target_network.predictor = self.predictor
         self.fc1_state = nn.Linear(self.s_dim[0] * (self.lstm_hidden_dim + 1), 64) # num_stocks * 64
         self.target_network.fc1_state = self.fc1_state
 
