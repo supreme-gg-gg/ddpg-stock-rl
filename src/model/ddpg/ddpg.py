@@ -90,6 +90,7 @@ class DDPGAgent(BaseAgent):
             for step in range(max_steps):
 
                 obs_tensor = torch.tensor(np.expand_dims(observation, axis=0), dtype=torch.float32, device=self.device)
+                print(prev_weights)
                 prev_weights = torch.tensor(np.expand_dims(prev_weights, axis=0), dtype=torch.float32, device=self.device)
 
                 if self.pvm:
@@ -106,7 +107,6 @@ class DDPGAgent(BaseAgent):
                 # print(next_obs.shape)
                 if self.obs_normalizer:
                     next_obs = self.obs_normalizer(next_obs)
-                print(type(observation), type(prev_weights), type(action), type(reward), type(done), type(next_obs))
                 self.buffer.add((observation, prev_weights), action, reward, done, next_obs)
                 
                 if self.buffer.size() >= batch_size:
