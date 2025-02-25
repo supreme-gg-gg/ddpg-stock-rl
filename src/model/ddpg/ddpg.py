@@ -85,7 +85,7 @@ class DDPGAgent(BaseAgent):
             ep_max_q = 0
             ep_actor_loss = 0
             ep_critic_loss = 0
-            prev_weights = torch.tensor([1.0] + [0.0] * (self.env.num_stocks), dtype=torch.float32, device=self.device)
+            prev_weights = np.array([1.0] + [0.0] * (self.env.num_stocks))
             
             for step in range(max_steps):
 
