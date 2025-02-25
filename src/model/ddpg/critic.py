@@ -42,17 +42,17 @@ class StockCritic(nn.Module):
         self.tau = tau
         self.predictor_type = predictor_type
         self.use_batch_norm = use_batch_norm
-
+        self.lstm_hidden_dim = 64
         self.q_value = None
 
         if predictor_type == 'cnn':
             self.predictor = CNNPredictor(input_dim=(1, state_dim[1], state_dim[3]), output_dim=(1, 1), use_batch_norm=use_batch_norm)
         elif predictor_type == 'lstm':
-            self.predictor = LSTMPredictor(input_dim=state_dim, output_dim=(1, 1), hidden_dim=64, use_batch_norm=use_batch_norm)
+            self.predictor = LSTMPredictor(input_dim=state_dim, output_dim=(1, 1), hidden_dim=self.lstm_hidden_dim, use_batch_norm=use_batch_norm)
         else:
             raise ValueError('Predictor type not recognized')
 
-        self.fc1_state = nn.Linear(self.s_dim[0] * 64, 64) # num_stocks * 64
+        self.fc1_state = nn.Linear(self.s_dim[0] * self.lstm_hidden_dim, 64) # num_stocks * 64
         self.fc2_action = nn.Linear(self.a_dim[0], 64)
 
         # Optional batch normalization after combining the two branches.
@@ -81,7 +81,7 @@ class StockCritic(nn.Module):
             torch.Tensor: Predicted Q-value.
         """
 
-        state_features = self.predictor(state)  # Expected shape: (batch, 64)
+        state_features = self.predictor(state)  # Expected shape: (batch, 64 * num_stocks)
         x_state = self.fc1_state(state_features)
         x_action = self.fc2_action(action)
         x = x_state + x_action
@@ -182,6 +182,43 @@ class StockCriticPVM(StockCritic):
         super(StockCriticPVM, self).__init__(state_dim, action_dim, learning_rate, tau,
                  predictor_type, use_batch_norm)
         
+        self.fc1_state = nn.Linear(self.s_dim[0] * (self.lstm_hidden_dim + 1), 64) # num_stocks * 64
+        self.target_network.fc1_state = self.fc1_state
+
+    def forward(self, state, weights, action):
+        state_features = self.predictor(state)
+        x_state_with_weights = torch.cat((state_features, weights), dim=1)
+        x_state = self.fc1_state(x_state_with_weights)
+        x_action = self.fc2_action(action)
+        x = x_state + x_action
+        if self.use_batch_norm:
+            x = self.bn(x)
+        x = F.relu(x)
+        self.q_value = self.out(x)
+        return self.q_value
+        
+    def train_step(self, state, weights, action, target_q_value):
+        q_value = self.forward(state, weights, action)
+        self.optimizer.zero_grad()
+        target_q_value = target_q_value.clone().detach()
+        loss = F.mse_loss(q_value, target_q_value)
+        loss.backward()
+        self.optimizer.step()
+        return q_value, loss.item()
+    
+    def predict(self, state, weights, action):
+        self.eval()
+        with torch.no_grad():
+            q_value = self.forward(state, weights, action)
+        self.train()
+        return q_value
+    
+    def predict_target(self, state, weights, action):
+        self.target_network.eval()
+        with torch.no_grad():
+            q_value = self.target_network(state, weights, action)
+        self.target_network.train()
+        return q_value
 
 if __name__ == '__main__':
     critic = StockCritic(state_dim=(10, 20), action_dim=(10), learning_rate=1e-3, tau=1e-3, predictor_type='lstm', use_batch_norm=True)

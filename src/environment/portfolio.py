@@ -225,9 +225,9 @@ class PortfolioSimWithPVM(PortfolioSim):
         self.infos = []
         self.p0 = 1.0
 
-        # everything in cash to begin with
+        # everything in cash to begin with for all periods
         self.pvm = np.zeros(shape=(self.steps + 1, len(self.asset_names) + 1)) 
-        self.pvm[self.window_length - 1, 0] = 1.0
+        self.pvm[:, 0] = 1.0
 
 
 class PortfolioEnv(gym.Env):
@@ -294,7 +294,7 @@ class PortfolioEnv(gym.Env):
         # get the observation space from the data min and max
         self.observation_space = gym.spaces.Tuple((
             gym.spaces.Box(low=-np.inf, high=np.inf, shape=(len(abbreviation), window_length, history.shape[-1]), dtype=np.float32),
-            gym.spaces.Box(low=0, high=1, shape=(1, len(abbreviation)), dtype=np.float32)
+            gym.spaces.Box(low=0, high=1, shape=(1, len(abbreviation) + 1), dtype=np.float32)
         ))
 
     def seed(self, seed=None):

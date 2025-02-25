@@ -76,7 +76,7 @@ class DDPGAgent(BaseAgent):
         np.random.seed(self.config['seed'])
         
         for ep in range(num_episodes):
-            observation, _ = self.env.reset()
+            (observation, _), _ = self.env.reset()
             if self.obs_normalizer:
                 observation = self.obs_normalizer(observation)
 
@@ -85,40 +85,57 @@ class DDPGAgent(BaseAgent):
             ep_max_q = 0
             ep_actor_loss = 0
             ep_critic_loss = 0
+            prev_weights = torch.tensor([1.0] + [0.0] * (self.env.num_stocks), dtype=torch.float32, device=self.device)
             
             for step in range(max_steps):
-                
+
                 obs_tensor = torch.tensor(np.expand_dims(observation, axis=0), dtype=torch.float32, device=self.device)
-                action = self.actor.predict(obs_tensor).squeeze(0).cpu().detach().numpy()
+                prev_weights = torch.tensor(np.expand_dims(prev_weights, axis=0), dtype=torch.float32, device=self.device)
+
+                if self.pvm:
+                    action = self.actor.predict(obs_tensor, prev_weights).squeeze(0).cpu().detach().numpy()
+                else:
+                    action = self.actor.predict(obs_tensor).squeeze(0).cpu().detach().numpy()
                 action += self.actor_noise()
                 if self.action_processor:
                     action_taken = self.action_processor(action)
                 else:
                     action_taken = action
 
-                next_obs, reward, done, _ = self.env.step(action_taken)
+                (next_obs, weights), reward, done, _ = self.env.step(action_taken)
+                # print(next_obs.shape)
                 if self.obs_normalizer:
                     next_obs = self.obs_normalizer(next_obs)
                 
-                self.buffer.add(observation, action, reward, done, next_obs)
+                self.buffer.add((observation, prev_weights), action, reward, done, next_obs)
                 
                 if self.buffer.size() >= batch_size:
                     # NOTE: s2 is the next state, s is the current state
-                    s_batch, a_batch, r_batch, done_batch, s2_batch = self.buffer.sample_batch(batch_size)
+                    (s_batch, w_batch), a_batch, r_batch, done_batch, s2_batch = self.buffer.sample_batch(batch_size)
                     s_batch = torch.tensor(s_batch, dtype=torch.float32, device=self.device)
+                    w_batch = torch.tensor(w_batch, dtype=torch.float32, device=self.device).squeeze(1)
                     a_batch = torch.tensor(a_batch, dtype=torch.float32, device=self.device)
                     r_batch = torch.tensor(r_batch, dtype=torch.float32, device=self.device).unsqueeze(1)
                     done_batch = torch.tensor(done_batch, dtype=torch.float32, device=self.device).unsqueeze(1)
                     s2_batch = torch.tensor(s2_batch, dtype=torch.float32, device=self.device)
                     
                     # Compute target Q value using target networks.
+                    # we're passing the same weights through the target and the online network
                     with torch.inference_mode():
-                        next_action = self.actor.predict_target(s2_batch)
-                        target_q = self.critic.predict_target(s2_batch, next_action)
+                        if self.pvm:
+                            next_action = self.actor.predict_target(s2_batch, w_batch)
+                            target_q = self.critic.predict_target(s2_batch, next_action, w_batch)
+                        else:
+                            next_action = self.actor.predict_target(s2_batch)
+                            target_q = self.critic.predict_target(s2_batch, next_action)
                         y = r_batch + self.gamma * target_q * done_batch
                     
-                    current_q, critic_loss = self.critic.train_step(s_batch, a_batch, y)
-                    _, actor_loss = self.actor.train_step(s_batch, self.critic)
+                    if self.pvm:
+                        current_q, critic_loss = self.critic.train_step(s_batch, w_batch, a_batch, y)
+                        _, actor_loss = self.actor.train_step(s_batch, w_batch, self.critic)
+                    else:
+                        current_q, critic_loss = self.critic.train_step(s_batch, a_batch, y)
+                        _, actor_loss = self.actor.train_step(s_batch, self.critic)
                     
                     self.actor.update_target_network()
                     self.critic.update_target_network()
@@ -128,7 +145,7 @@ class DDPGAgent(BaseAgent):
                     ep_critic_loss += critic_loss
                 
                 ep_reward += reward
-                observation = next_obs
+                observation, prev_weights = next_obs, weights
 
                 if done or step == max_steps - 1:
                     avg_q = ep_max_q / (step + 1) if step > 0 else 0

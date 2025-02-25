@@ -34,15 +34,17 @@ class StockActor(nn.Module):
         self.predictor_type = predictor_type
         self.use_batch_norm = use_batch_norm
 
+        self.lstm_hidden_dim = 64
+
         if predictor_type == 'cnn':
             self.predictor = CNNPredictor(input_dim=state_dim, output_dim=(1, 1), use_batch_norm=use_batch_norm)
         elif predictor_type == 'lstm':
-            self.predictor = LSTMPredictor(input_dim=state_dim, output_dim=(1, 1), hidden_dim=64, use_batch_norm=use_batch_norm)
+            self.predictor = LSTMPredictor(input_dim=state_dim, output_dim=(1, 1), hidden_dim=self.lstm_hidden_dim, use_batch_norm=use_batch_norm)
         else:
             raise ValueError('Predictor type not recognized')
         
         layers = []
-        layers.append(nn.Linear(self.s_dim[0]*64, 64))
+        layers.append(nn.Linear(self.s_dim[0] * self.lstm_hidden_dim, 64))
         if use_batch_norm:
             layers.append(nn.BatchNorm1d(64))
         layers.append(nn.ReLU())
@@ -126,3 +128,61 @@ class StockActorPVM(StockActor):
                  predictor_type, use_batch_norm):
         super(StockActorPVM, self).__init__(state_dim, action_dim, action_bound, learning_rate, tau, batch_size,
                  predictor_type, use_batch_norm)
+        
+        # concatenate the weights
+        new_first_layer = nn.Linear(self.s_dim[0] * (self.lstm_hidden_dim + 1), 64)
+        self.fc_layers[0] = new_first_layer
+        self.target_network.fc_layers[0] = new_first_layer
+
+    def forward(self, state, weights):
+        x = self.predictor(state)
+        x = torch.cat((x, weights), dim=1)
+        x = self.fc_layers(x)
+        # softmax ensure the output is between 0 and 1
+        x = torch.softmax(x, dim=-1)
+        # scale the output to the action bound (portfolio weight)
+        scaled_out = x * self.action_bound
+        return scaled_out
+    
+    def predict(self, state, weights):
+        """Predict the action given the input"""
+        self.eval()
+        with torch.no_grad():
+            actions = self.forward(state, weights)
+        self.train()
+        return actions
+    
+    def predict_target(self, state, weights):
+        """
+        Predict the action given the input using the target network
+        This differs from the predict method in that it uses the target network
+        """
+        self.target_network.eval()
+        with torch.no_grad():
+            actions = self.target_network(state, weights)
+            # actions = torch.tanh(actions) * self.action_bound
+        self.target_network.train()
+        return actions
+    
+    def train_step(self, state, weights, critic) -> Tuple[torch.Tensor, float]:
+        """Train the actor network by maximizing the Q value
+        Args:
+            inputs (torch.Tensor): input tensor
+            critic (StockCritic): critic network
+        """
+        self.optimizer.zero_grad()
+        actions = self.forward(state, weights)
+        # predict the Q value using the critic network
+
+        for param in critic.parameters():
+            param.requires_grad = False
+
+        q_values = critic.forward(state, weights, actions)
+        loss = -torch.mean(q_values)
+        loss.backward()
+        self.optimizer.step()
+
+        for param in critic.parameters():
+            param.requires_grad = True
+
+        return q_values, loss.item()

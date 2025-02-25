@@ -73,22 +73,25 @@ if __name__ == '__main__':
     
     # create actor critic noise and agent
     actor_noise = OrnsteinUhlenbeckActionNoise(mu=np.zeros(action_dim))
-
-    if pvm:
+    if pvm == 'True':
         actor = StockActorPVM(state_dim, action_dim, action_bound, 1e-4, tau, batch_size,
                             predictor_type, use_batch_norm)
         critic = StockCriticPVM(state_dim=state_dim, action_dim=action_dim, learning_rate=1e-3, tau=1e-3,
                              predictor_type=predictor_type, use_batch_norm=use_batch_norm)
+        ddpg_model = DDPGAgent(env, actor, critic, 0.95, actor_noise, obs_normalizer=obs_normalizer, pvm=True,
+                        config_file='config/stock.json', model_save_path=model_save_path,
+                        summary_path=summary_path)
     else:
         actor = StockActor(state_dim, action_dim, action_bound, 1e-4, tau, batch_size,
                             predictor_type, use_batch_norm)
         critic = StockCritic(state_dim=state_dim, action_dim=action_dim, learning_rate=1e-3, tau=1e-3,
                                 predictor_type=predictor_type, use_batch_norm=use_batch_norm)
-    
-    # Initalize the model (no need to load weight unless using checkpoints)
-    ddpg_model = DDPGAgent(env, actor, critic, 0.95, actor_noise, obs_normalizer=obs_normalizer,
+        ddpg_model = DDPGAgent(env, actor, critic, 0.95, actor_noise, obs_normalizer=obs_normalizer, pvm=False,
                         config_file='config/stock.json', model_save_path=model_save_path,
                         summary_path=summary_path)
+    
+    # Initalize the model (no need to load weight unless using checkpoints)
+    
     ddpg_model.train() # this saves automatically
 
     # TODO: Check if action_processor is necessary, it is NOT used in the original code but
