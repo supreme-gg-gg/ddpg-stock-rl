@@ -85,7 +85,7 @@ class DDPGAgent(BaseAgent):
             ep_max_q = 0
             ep_actor_loss = 0
             ep_critic_loss = 0
-            prev_weights = np.array([1.0] + [0.0] * (self.env.num_stocks))
+            prev_weights = np.array([1.0] + [0.0] * (self.env.num_stocks), dtype=np.float32)
             
             for step in range(max_steps):
 
@@ -106,7 +106,7 @@ class DDPGAgent(BaseAgent):
                 # print(next_obs.shape)
                 if self.obs_normalizer:
                     next_obs = self.obs_normalizer(next_obs)
-                
+                print(type(observation), type(prev_weights), type(action), type(reward), type(done), type(next_obs))
                 self.buffer.add((observation, prev_weights), action, reward, done, next_obs)
                 
                 if self.buffer.size() >= batch_size:
