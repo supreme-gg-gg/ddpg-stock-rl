@@ -44,6 +44,14 @@ def test_model(env, model):
         observation, _, done, _ = env.step(action)
     env.render()
 
+def test_model_pvm(env, model):
+    (observation, prev_weights), info = env.reset()
+    done = False
+    while not done:
+        action = model.predict_single(observation, prev_weights)
+        (observation, prev_weights), _, done, info = env.step(action)
+    env.render()
+
 def test_model_multiple(env, models):
     observation, info = env.reset()
     done = False
