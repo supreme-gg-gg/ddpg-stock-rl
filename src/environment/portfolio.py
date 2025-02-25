@@ -199,7 +199,7 @@ class PortfolioSimWithPVM(PortfolioSim):
         self.p0 = p1
 
         # if we run out of money, we're done (losing all the money)
-        done = p1 == 0
+        done = p1 < eps
 
         info = {
             "reward": reward,

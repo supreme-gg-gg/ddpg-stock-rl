@@ -131,15 +131,17 @@ class StockActorPVM(StockActor):
                  predictor_type, use_batch_norm)
         
         # concatenate the weights
-        self.lstm_hidden_dim = 16
+        self.lstm_hidden_dim = 32
         self.predictor = LSTMPredictor(input_dim=state_dim, output_dim=(1, 1), hidden_dim=self.lstm_hidden_dim, use_batch_norm=use_batch_norm)
         # self.fc_layers[0] = nn.Linear(self.s_dim[0] * (self.lstm_hidden_dim + 1), 64)
         # self.target_network.fc_layers[0] = self.fc_layers[0]
 
-        self.conv1d = nn.Conv1d(in_channels=self.lstm_hidden_dim + 1, out_channels=32, kernel_size=1)
+        self.fc0 = nn.Linear(self.lstm_hidden_dim + 1, 16)
+        self.conv1d = nn.Conv1d(in_channels=16, out_channels=32, kernel_size=1)
         self.fc1 = nn.Linear(32 * self.s_dim[0], 64)
         self.bn1 = nn.BatchNorm1d(64)
         self.fc2 = nn.Linear(64, self.s_dim[0])
+        self.fc2.weight.data.uniform_(-0.003, 0.003)
         # self.target_network.conv1d = self.conv1d
         # self.target_network.fc1 = self.fc1
         # self.target_network.bn1 = self.bn1
@@ -165,7 +167,9 @@ class StockActorPVM(StockActor):
 
         prev_w = weights.unsqueeze(-1)
         x = torch.cat([lstm_out, prev_w], dim=-1)
-        x = x.permute(0, 2, 1)
+        x = x.view(batch_size * self.s_dim[0], -1)
+        x = F.relu(self.fc0(x))
+        x = x.view(batch_size, -1, self.s_dim[0])
         x = self.conv1d(x)
         x = F.relu(x)
         x = x.view(batch_size, -1)

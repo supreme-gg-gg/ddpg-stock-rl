@@ -187,23 +187,17 @@ class StockCriticPVM(StockCritic):
 
 
         self.conv1d = nn.Conv1d(in_channels=self.lstm_hidden_dim + 1, out_channels=32, kernel_size=1)
-        self.fc1 = nn.Linear(32 * self.s_dim[0], 64)
+        self.fc1 = nn.Linear(self.s_dim[0] * (self.lstm_hidden_dim + 1), 64)
         self.target_network = create_target_network(self)
 
 
     def forward(self, state, weights, action):
         batch_size = state.size(0)
         state_features = self.predictor(state)
-        lstm_out = state_features.view(-1, self.s_dim[0], self.lstm_hidden_dim)
-
-        prev_w = weights.unsqueeze(-1)
-        x = torch.cat([lstm_out, prev_w], dim=-1)
-        x = x.permute(0, 2, 1)
-        x = self.conv1d(x)
-        x = F.relu(x)
-        x = x.view(batch_size, -1)
-        x = self.fc1(x)
-
+        lstm_out = state_features.view(-1, self.s_dim[0] * self.lstm_hidden_dim)
+        # prev_w = weights.unsqueeze(-1)
+        x = torch.cat([lstm_out, weights], dim=-1)
+        x = F.relu(self.fc1(x))
         x_action = self.fc2_action(action)
         x = x + x_action
         if self.use_batch_norm:
