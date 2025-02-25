@@ -48,7 +48,7 @@ def test_model_pvm(env, model):
     (observation, prev_weights), info = env.reset()
     done = False
     while not done:
-        action = model.predict_single(observation, prev_weights)
+        action = model.predict_single_pvm(observation, prev_weights)
         (observation, prev_weights), _, done, info = env.step(action)
     env.render()
 

@@ -192,3 +192,11 @@ class DDPGAgent(BaseAgent):
         NOTE: I believe the original predict single is deprecated it just uses the regular predict function.
         """
         return self.predict(observation)
+    
+    def predict_single_pvm(self, observation, weights):
+        obs_tensor = torch.tensor(np.expand_dims(observation, axis=0), dtype=torch.float32, device=self.device)
+        weights = torch.tensor(np.expand_dims(weights, axis=0), dtype=torch.float32, device=self.device)
+        action = self.actor.predict(obs_tensor, weights).squeeze(0).cpu().detach().numpy()
+        if self.action_processor:
+            action = self.action_processor(action)
+        return action
