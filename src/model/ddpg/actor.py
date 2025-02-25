@@ -130,6 +130,7 @@ class StockActorPVM(StockActor):
                  predictor_type, use_batch_norm)
         
         # concatenate the weights
+        self.lstm_hidden_dim = 32
         new_first_layer = nn.Linear(self.s_dim[0] * (self.lstm_hidden_dim + 1), 64)
         self.fc_layers[0] = new_first_layer
         self.target_network.fc_layers[0] = new_first_layer

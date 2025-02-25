@@ -182,6 +182,7 @@ class StockCriticPVM(StockCritic):
         super(StockCriticPVM, self).__init__(state_dim, action_dim, learning_rate, tau,
                  predictor_type, use_batch_norm)
         
+        self.lstm_hidden_dim = 32
         self.fc1_state = nn.Linear(self.s_dim[0] * (self.lstm_hidden_dim + 1), 64) # num_stocks * 64
         self.target_network.fc1_state = self.fc1_state
 

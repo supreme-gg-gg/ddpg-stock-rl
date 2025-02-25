@@ -68,8 +68,8 @@ if __name__ == '__main__':
         use_batch_norm = False
     else:
         raise ValueError('Unknown batch norm argument')
-    model_save_path = get_model_path(window_length, predictor_type, use_batch_norm)
-    summary_path = get_result_path(window_length, predictor_type, use_batch_norm)
+    model_save_path = get_model_path(window_length, predictor_type, use_batch_norm, pvm)
+    summary_path = get_result_path(window_length, predictor_type, use_batch_norm, pvm)
     
     # create actor critic noise and agent
     actor_noise = OrnsteinUhlenbeckActionNoise(mu=np.zeros(action_dim))

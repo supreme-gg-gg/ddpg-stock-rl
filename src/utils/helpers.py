@@ -5,20 +5,28 @@ This helps modularise usage to group all helper functions under utils.
 
 import numpy as np
 
-def get_model_path(window_length, predictor_type, use_batch_norm):
+def get_model_path(window_length, predictor_type, use_batch_norm, pvm=False):
     if use_batch_norm:
         batch_norm_str = 'batch_norm'
     else:
         batch_norm_str = 'no_batch_norm'
-    return 'weights/stock/{}/window_{}/{}/checkpoint.ckpt'.format(predictor_type, window_length, batch_norm_str)
+    if pvm:
+        pvm_str = 'pvm'
+    else:
+        pvm_str = 'no_pvm'
+    return 'weights/stock/{}/window_{}/{}/{}/checkpoint.ckpt'.format(predictor_type, window_length, batch_norm_str, pvm_str)
 
 
-def get_result_path(window_length, predictor_type, use_batch_norm):
+def get_result_path(window_length, predictor_type, use_batch_norm, pvm=False):
     if use_batch_norm:
         batch_norm_str = 'batch_norm'
     else:
         batch_norm_str = 'no_batch_norm'
-    return 'results/stock/{}/window_{}/{}/'.format(predictor_type, window_length, batch_norm_str)
+    if pvm:
+        pvm_str = 'pvm'
+    else:
+        pvm_str = 'no_pvm'
+    return 'results/stock/{}/window_{}/{}/{}/'.format(predictor_type, window_length, batch_norm_str, pvm_str)
 
 # NOTE: This function is deprecated, variable scope is no longer used in PyTorch, this is old TensorFlow code
 # def get_variable_scope(window_length, predictor_type, use_batch_norm):
