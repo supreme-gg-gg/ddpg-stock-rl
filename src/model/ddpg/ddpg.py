@@ -194,6 +194,8 @@ class DDPGAgent(BaseAgent):
         return self.predict(observation)
     
     def predict_single_pvm(self, observation, weights):
+        if self.obs_normalizer:
+            observation = self.obs_normalizer(observation)
         obs_tensor = torch.tensor(np.expand_dims(observation, axis=0), dtype=torch.float32, device=self.device)
         weights = torch.tensor(np.expand_dims(weights, axis=0), dtype=torch.float32, device=self.device)
         action = self.actor.predict(obs_tensor, weights).squeeze(0).cpu().detach().numpy()
